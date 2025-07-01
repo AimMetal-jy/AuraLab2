@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:auralab_0701/routes/app_routes.dart';
+import 'package:auralab_0701/services/audio_player_service.dart';
 
 void main() {
   runApp(const MyApp());
@@ -10,11 +12,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      debugShowCheckedModeBanner: false,
-      routerConfig: router,
-      title: "AuraLab",
-      theme: ThemeData(platform: TargetPlatform.iOS,splashFactory: NoSplash.splashFactory,),
+    return ChangeNotifierProvider(
+      create: (context) => AudioPlayerService(),
+      child: MaterialApp.router(
+        debugShowCheckedModeBanner: false,
+        routerConfig: router,
+        title: "AuraLab",
+        theme: ThemeData(platform: TargetPlatform.iOS,splashFactory: NoSplash.splashFactory,),
+      ),
     );
   }
 }

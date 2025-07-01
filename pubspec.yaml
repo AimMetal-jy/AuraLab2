@@ -43,6 +43,7 @@ dependencies:
   json_annotation: ^4.9.0
   dio: ^5.8.0+1
   path: ^1.9.0
+  provider: ^6.1.2
 
 dev_dependencies:
   flutter_test:
@@ -80,6 +81,7 @@ flutter_launcher_icons:
 flutter:
   assets:
     - assets/images/AuraLab_icon.png
+    - assets/audio/
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
