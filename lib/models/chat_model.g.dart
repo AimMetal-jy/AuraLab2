@@ -19,6 +19,7 @@ ChatModel _$ChatModelFromJson(Map<String, dynamic> json) => ChatModel(
   historyMessages: (json['history_messages'] as List<dynamic>?)
       ?.map((e) => Message.fromJson(e as Map<String, dynamic>))
       .toList(),
+  historyMessage: json['history_message'] as String?,
 );
 
 Map<String, dynamic> _$ChatModelToJson(ChatModel instance) => <String, dynamic>{
@@ -28,6 +29,7 @@ Map<String, dynamic> _$ChatModelToJson(ChatModel instance) => <String, dynamic>{
   'success': instance.success,
   'timestamp': instance.timestamp?.toIso8601String(),
   'history_messages': instance.historyMessages,
+  'history_message': instance.historyMessage,
 };
 
 Data _$DataFromJson(Map<String, dynamic> json) => Data(
