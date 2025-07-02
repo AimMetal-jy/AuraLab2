@@ -201,6 +201,7 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                             final scaffoldMessenger = ScaffoldMessenger.of(
                               context,
                             );
+                            scaffoldMessenger.removeCurrentSnackBar();
                             await _selectionService.addText(message.content);
                             if (mounted) {
                               scaffoldMessenger.showSnackBar(
@@ -257,6 +258,13 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                       onPressed: () async {
                         if (textEditingController.text.isNotEmpty) {
                           final userMessage = textEditingController.text;
+                          final scaffoldMessenger = ScaffoldMessenger.of(
+                            context,
+                          );
+                          final errorColor = Theme.of(
+                            context,
+                          ).colorScheme.error;
+
                           // 立即清空输入框
                           textEditingController.clear();
 
@@ -329,6 +337,15 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                                 messages.removeLast();
                               });
                             }
+                            scaffoldMessenger.removeCurrentSnackBar();
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  '处理失败: ${e.toString().replaceAll('Exception: ', '')}',
+                                ),
+                                backgroundColor: errorColor,
+                              ),
+                            );
                           } finally {
                             setState(() {
                               isLoading = false;

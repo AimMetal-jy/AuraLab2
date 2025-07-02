@@ -149,44 +149,73 @@ class TranscriptionService {
   Future<TranscriptionStatusResponse> getWhisperXTaskStatus(
     String taskId,
   ) async {
-    try {
-      final response = await _dio.get(
-        '/model',
-        queryParameters: {
-          'model': 'whisperx',
-          'action': 'status',
-          'task_id': taskId,
-        },
-      );
+    int retryCount = 0;
+    const int maxRetries = 3;
 
-      if (response.statusCode == 200) {
-        debugPrint('WhisperX状态查询响应: ${response.data}');
-
-        // WhisperX返回的数据格式需要转换
-        Map<String, dynamic> data = response.data;
-
-        // 转换WhisperX的状态到标准格式
-        Map<String, dynamic> standardizedData = {
-          'task_id': data['task_id'] ?? taskId,
-          'status': data['status'] ?? 'unknown',
-          'message': data['message'],
-          'created_at': data['created_at'],
-          'filename': data['filename'],
-        };
-
-        debugPrint('标准化后的数据: $standardizedData');
-        return TranscriptionStatusResponse.fromJson(standardizedData);
-      } else {
-        throw DioException(
-          requestOptions: response.requestOptions,
-          response: response,
-          message: '查询状态失败，状态码: ${response.statusCode}',
+    while (retryCount < maxRetries) {
+      try {
+        final response = await _dio.get(
+          '/model',
+          queryParameters: {
+            'model': 'whisperx',
+            'action': 'status',
+            'task_id': taskId,
+          },
         );
+
+        if (response.statusCode == 200) {
+          debugPrint('WhisperX状态查询响应: ${response.data}');
+
+          // WhisperX返回的数据格式需要转换
+          Map<String, dynamic> data = response.data;
+
+          // 转换WhisperX的状态到标准格式
+          String whisperxStatus = data['status'] ?? 'unknown';
+          String standardStatus = _mapWhisperXStatus(whisperxStatus);
+
+          Map<String, dynamic> standardizedData = {
+            'task_id': data['task_id'] ?? taskId,
+            'status': standardStatus,
+            'message': data['message'] ?? _getStatusMessage(whisperxStatus),
+            'created_at': data['created_at'],
+            'filename': data['filename'],
+          };
+
+          debugPrint('WhisperX原始状态: $whisperxStatus -> 标准状态: $standardStatus');
+          debugPrint('标准化后的数据: $standardizedData');
+          return TranscriptionStatusResponse.fromJson(standardizedData);
+        } else {
+          throw DioException(
+            requestOptions: response.requestOptions,
+            response: response,
+            message: '查询状态失败，状态码: ${response.statusCode}',
+          );
+        }
+      } on DioException catch (e) {
+        retryCount++;
+        debugPrint('查询WhisperX任务状态异常 (第$retryCount次): ${e.message}');
+
+        if (retryCount >= maxRetries) {
+          rethrow;
+        }
+
+        // 重试前等待一段时间
+        await Future.delayed(Duration(seconds: retryCount));
+      } catch (e) {
+        retryCount++;
+        debugPrint('查询WhisperX任务状态未知错误 (第$retryCount次): $e');
+
+        if (retryCount >= maxRetries) {
+          rethrow;
+        }
+
+        // 重试前等待一段时间
+        await Future.delayed(Duration(seconds: retryCount));
       }
-    } on DioException catch (e) {
-      debugPrint('查询WhisperX任务状态异常: ${e.message}');
-      rethrow;
     }
+
+    // 如果所有重试都失败了，抛出最后一个异常
+    throw Exception('查询WhisperX任务状态失败，已重试$maxRetries次');
   }
 
   /// 下载蓝心大模型转录结果
@@ -243,6 +272,9 @@ class TranscriptionService {
       }
     } on DioException catch (e) {
       debugPrint('下载WhisperX结果异常: ${e.message}');
+      rethrow;
+    } catch (e) {
+      debugPrint('下载WhisperX结果未知错误: $e');
       rethrow;
     }
   }
@@ -408,6 +440,45 @@ class TranscriptionService {
     } catch (e) {
       debugPrint('检查文件可用性失败: $e');
       return false;
+    }
+  }
+
+  /// 映射WhisperX状态到标准状态
+  String _mapWhisperXStatus(String whisperxStatus) {
+    switch (whisperxStatus.toLowerCase()) {
+      case 'queued':
+        return 'pending';
+      case 'processing':
+      case 'transcription_completed':
+      case 'alignment_completed':
+        return 'processing';
+      case 'completed':
+        return 'completed';
+      case 'failed':
+        return 'failed';
+      default:
+        debugPrint('未知的WhisperX状态: $whisperxStatus');
+        return 'pending';
+    }
+  }
+
+  /// 获取状态消息
+  String _getStatusMessage(String whisperxStatus) {
+    switch (whisperxStatus.toLowerCase()) {
+      case 'queued':
+        return '任务已排队，等待处理';
+      case 'processing':
+        return '正在处理音频文件...';
+      case 'transcription_completed':
+        return '基础转录已完成，正在进行单词级对齐...';
+      case 'alignment_completed':
+        return '单词级对齐已完成，正在进行说话人分离...';
+      case 'completed':
+        return '所有处理步骤已完成';
+      case 'failed':
+        return '处理失败';
+      default:
+        return '状态未知';
     }
   }
 

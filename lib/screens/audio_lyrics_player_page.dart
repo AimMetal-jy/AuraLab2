@@ -14,7 +14,6 @@ class AudioLyricsPlayerPage extends StatefulWidget {
 
 class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
     with TickerProviderStateMixin {
-  late AudioPlayerService _playerService;
   late AnimationController _lyricsAnimationController;
   late ScrollController _lyricsScrollController;
   bool _isInitialized = false;
@@ -27,18 +26,31 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
       duration: const Duration(milliseconds: 300),
     );
     _lyricsScrollController = ScrollController();
-    _initializePlayer();
+
+    // 使用 WidgetsBinding 来确保 Provider 已经准备好
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializePlayer();
+    });
   }
 
   Future<void> _initializePlayer() async {
-    _playerService = AudioPlayerService();
+    final playerService = Provider.of<AudioPlayerService>(
+      context,
+      listen: false,
+    );
     try {
-      await _playerService.loadAudioData(widget.audioData);
-      setState(() {
-        _isInitialized = true;
-      });
+      await playerService.loadAudioData(widget.audioData);
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
     } catch (e) {
       debugPrint('初始化播放器失败: $e');
+      if (mounted) {
+        // 可以选择显示错误信息或直接关闭页面
+        Navigator.of(context).pop();
+      }
     }
   }
 
@@ -47,24 +59,22 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
     if (!_isInitialized) {
       return Scaffold(
         backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
         body: const Center(
           child: CircularProgressIndicator(color: Colors.white),
         ),
       );
     }
 
-    return ChangeNotifierProvider.value(
-      value: _playerService,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(),
-              Expanded(flex: 3, child: _buildLyricsArea()),
-              _buildPlayerControls(),
-            ],
-          ),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(flex: 3, child: _buildLyricsArea()),
+            _buildPlayerControls(),
+          ],
         ),
       ),
     );
@@ -507,7 +517,6 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
   void dispose() {
     _lyricsAnimationController.dispose();
     _lyricsScrollController.dispose();
-    _playerService.dispose();
     super.dispose();
   }
 }

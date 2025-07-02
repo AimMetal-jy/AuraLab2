@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/audio_player_service.dart';
 import '../services/audio_library_service.dart';
+import '../config/performance_config.dart';
 import 'dart:io';
 
 class HomePage extends StatefulWidget {
@@ -24,9 +25,8 @@ class HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    // 刷新音频库
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AudioLibraryService>().refresh();
+    _tabController.addListener(() {
+      setState(() {}); // 切换tab时刷新UI
     });
   }
 
@@ -95,7 +95,7 @@ class HomePageState extends State<HomePage>
                         // 刷新按钮
                         IconButton(
                           onPressed: () {
-                            context.read<AudioLibraryService>().refresh();
+                            _refreshAudioLibrary();
                           },
                           icon: const Icon(Icons.refresh),
                           tooltip: '刷新音频库',
@@ -234,14 +234,7 @@ class HomePageState extends State<HomePage>
                   );
                 }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final audio = items[index];
-                    return _buildAudioItem(audio);
-                  },
-                );
+                return _buildAudioList(items);
               },
             ),
           ),
@@ -250,361 +243,91 @@ class HomePageState extends State<HomePage>
       floatingActionButton: FloatingActionButton(
         onPressed: _pickAndAddAudioFiles,
         backgroundColor: Theme.of(context).primaryColor,
-        child: const Icon(Icons.add, color: Colors.white),
         tooltip: '添加音频文件',
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildAudioItem(AudioItem audio) {
-    final audioService = Provider.of<AudioPlayerService>(context, listen: true);
-    final isPlaying =
-        audioService.currentSong == audio.title && audioService.isPlaying;
-    final isCurrent = audioService.currentSong == audio.title;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: () => _playAudio(audio),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: isCurrent
-                ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              // 播放按钮
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: isCurrent
-                      ? Theme.of(context).primaryColor
-                      : Colors.grey[200],
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: IconButton(
-                  onPressed: () => _playAudio(audio),
-                  icon: Icon(
-                    isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: isCurrent ? Colors.white : Colors.grey[700],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              // 音频信息
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      audio.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: isCurrent
-                            ? Theme.of(context).primaryColor
-                            : null,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        if (audio.isTTS) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.blue[100],
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'TTS',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.blue,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Expanded(
-                          child: Text(
-                            audio.artist,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.access_time,
-                          size: 14,
-                          color: Colors.grey[500],
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _formatDateTime(audio.createdAt),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[500],
-                          ),
-                        ),
-                        if (audio.fileSize != null) ...[
-                          const SizedBox(width: 16),
-                          Icon(
-                            Icons.storage,
-                            size: 14,
-                            color: Colors.grey[500],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _formatFileSize(audio.fileSize!),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // 更多操作
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  switch (value) {
-                    case 'delete':
-                      _deleteAudio(audio);
-                      break;
-                    case 'info':
-                      _showAudioInfo(audio);
-                      break;
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'info',
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline, size: 20),
-                        SizedBox(width: 8),
-                        Text('详细信息'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete, size: 20, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('删除', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+  Widget _buildAudioList(List<AudioItem> items) {
+    if (items.isEmpty) {
+      return const Center(
+        child: Text(
+          '这里空空如也\n点击右下角按钮添加音频',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 16, color: Colors.grey),
         ),
-      ),
+      );
+    }
+
+    return ListView.builder(
+      // 使用高性能滚动物理效果
+      physics: PerformanceConfig.optimizedScrollPhysics,
+      itemCount: items.length,
+      // 添加缓存范围以提高滚动性能
+      cacheExtent: 500,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return AudioListItem(
+          item: item,
+          onLongPress: () => _deleteAudioItem(item),
+        );
+      },
     );
   }
 
-  Future<void> _playAudio(AudioItem audio) async {
-    try {
-      final audioService = Provider.of<AudioPlayerService>(
-        context,
-        listen: false,
-      );
-
-      // 如果当前正在播放这个音频，则暂停
-      if (audioService.currentSong == audio.title && audioService.isPlaying) {
-        await audioService.pause();
-      } else {
-        // 检查音频文件是否存在
-        if (!File(audio.filePath).existsSync()) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('音频文件不存在: ${audio.title}'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return;
-        }
-
-        // 播放音频
-        await audioService.playFromFile(
-          audio.filePath,
-          songTitle: audio.title,
-          artist: audio.artist,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('播放失败: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteAudio(AudioItem audio) async {
-    final result = await showDialog<bool>(
+  void _deleteAudioItem(AudioItem audio) {
+    showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('确认删除'),
-        content: Text('确定要删除音频 "${audio.title}" 吗？'),
+        content: Text('确定要删除 "${audio.title}" 吗？'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(context).pop(),
             child: const Text('取消'),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop(); // 先关闭对话框
+              await _performDeleteAudio(audio);
+            },
             child: const Text('删除'),
           ),
         ],
       ),
     );
+  }
 
-    if (result == true && mounted) {
-      try {
-        final audioService = Provider.of<AudioPlayerService>(
-          context,
-          listen: false,
-        );
+  Future<void> _performDeleteAudio(AudioItem audio) async {
+    try {
+      final audioService = Provider.of<AudioPlayerService>(
+        context,
+        listen: false,
+      );
+      final audioLibraryService = context.read<AudioLibraryService>();
 
-        // 检查是否正在播放要删除的音频
-        bool wasPlayingDeletedAudio = false;
-        if (audioService.currentSong == audio.title) {
-          wasPlayingDeletedAudio = true;
-          // 完全清除播放器状态和音频数据
-          await audioService.clearAudioData();
-          debugPrint('已停止播放被删除的音频: ${audio.title}');
-        }
+      // 检查是否正在播放要删除的音频
+      bool wasPlayingDeletedAudio = false;
+      if (audioService.currentSong == audio.title) {
+        wasPlayingDeletedAudio = true;
+        // 完全清除播放器状态和音频数据
+        await audioService.clearAudioData();
+        debugPrint('已停止播放被删除的音频: ${audio.title}');
+      }
 
-        // 从库中删除音频
-        await context.read<AudioLibraryService>().removeAudio(audio.id);
+      // 从库中删除音频
+      await audioLibraryService.removeAudio(audio.id);
 
-        if (mounted) {
-          String message = wasPlayingDeletedAudio ? '音频已删除并停止播放' : '音频已删除';
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(message)));
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('删除失败: $e')));
-        }
+      if (mounted) {
+        String message = wasPlayingDeletedAudio ? '音频已删除并停止播放' : '音频已删除';
+        _showSnackBar(message);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar('删除失败: $e', isError: true);
       }
     }
-  }
-
-  void _showAudioInfo(AudioItem audio) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(audio.title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildInfoRow('类型', audio.isTTS ? 'TTS生成' : '本地音频'),
-            _buildInfoRow('艺术家', audio.artist),
-            _buildInfoRow('创建时间', _formatDateTime(audio.createdAt)),
-            if (audio.fileSize != null)
-              _buildInfoRow('文件大小', _formatFileSize(audio.fileSize!)),
-            _buildInfoRow('文件路径', audio.filePath, wrap: true),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value, {bool wrap = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(color: Colors.grey[700]),
-              maxLines: wrap ? null : 1,
-              overflow: wrap ? null : TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatDateTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inDays == 0) {
-      if (difference.inHours == 0) {
-        if (difference.inMinutes == 0) {
-          return '刚刚';
-        }
-        return '${difference.inMinutes}分钟前';
-      }
-      return '${difference.inHours}小时前';
-    } else if (difference.inDays == 1) {
-      return '昨天';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}天前';
-    } else {
-      return '${dateTime.month}月${dateTime.day}日';
-    }
-  }
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   /// 选择并添加音频文件
@@ -631,22 +354,12 @@ class HomePageState extends State<HomePage>
         }
 
         if (invalidFiles.isNotEmpty && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('以下文件无法访问: ${invalidFiles.join(', ')}'),
-              backgroundColor: Colors.orange,
-            ),
-          );
+          _showSnackBar('以下文件无法访问: ${invalidFiles.join(', ')}');
         }
 
         if (validFilePaths.isEmpty) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('没有有效的音频文件可以添加'),
-                backgroundColor: Colors.red,
-              ),
-            );
+            _showSnackBar('没有有效的音频文件可以添加');
           }
           return;
         }
@@ -684,9 +397,7 @@ class HomePageState extends State<HomePage>
                 ? '音频文件 "${validFileNames.first}" 已添加'
                 : '成功添加 ${validFilePaths.length} 个音频文件';
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(message)),
-            );
+            _showSnackBar(message);
           }
         }
       }
@@ -699,10 +410,253 @@ class HomePageState extends State<HomePage>
           // 忽略关闭对话框的错误
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('添加音频文件失败: $e'), backgroundColor: Colors.red),
-        );
+        _showSnackBar('添加音频文件失败: $e', isError: true);
       }
     }
+  }
+
+  // 显示 SnackBar 的辅助函数
+  void _showSnackBar(String message, {bool isError = false}) {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    scaffoldMessenger.removeCurrentSnackBar();
+    scaffoldMessenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
+      ),
+    );
+  }
+
+  // 刷新音频库
+  Future<void> _refreshAudioLibrary() async {
+    final audioLibrary = Provider.of<AudioLibraryService>(
+      context,
+      listen: false,
+    );
+    await audioLibrary.refreshLibrary();
+    _showSnackBar('音频库已刷新');
+  }
+}
+
+class AudioListItem extends StatelessWidget {
+  final AudioItem item;
+  final VoidCallback? onLongPress;
+
+  const AudioListItem({super.key, required this.item, this.onLongPress});
+
+  @override
+  Widget build(BuildContext context) {
+    final audioLibraryService = Provider.of<AudioLibraryService>(
+      context,
+      listen: false,
+    );
+
+    return Consumer<AudioPlayerService>(
+      builder: (context, audioService, child) {
+        final isPlaying =
+            audioService.isPlaying &&
+            audioService.audioData?.audioFilePath == item.filePath;
+        final isCurrent =
+            audioService.audioData?.audioFilePath == item.filePath;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () async {
+                // 增加播放次数
+                if (item.id != null) {
+                  audioLibraryService.incrementPlayCount(item.id!);
+                }
+
+                if (isCurrent) {
+                  audioService.togglePlayPause();
+                } else {
+                  try {
+                    await audioService.playFromFile(
+                      item.filePath,
+                      songTitle: item.title,
+                      artist: item.artist,
+                    );
+                  } catch (e) {
+                    // 使用 Home 页面上下文中定义的辅助函数
+                    (context as Element)
+                        .findAncestorStateOfType<HomePageState>()
+                        ?._showSnackBar(
+                          '播放失败: ${e.toString().replaceFirst('Exception: ', '')}',
+                          isError: true,
+                        );
+                  }
+                }
+              },
+              onLongPress: onLongPress,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    // 播放按钮
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: isCurrent
+                            ? Theme.of(context).primaryColor
+                            : Colors.grey[200],
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Icon(
+                        isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: isCurrent ? Colors.white : Colors.grey[700],
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // 音频信息
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.title,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: isCurrent
+                                  ? Theme.of(context).primaryColor
+                                  : null,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              if (item.isTTS) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue[100],
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'TTS',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.blue,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  item.artist,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                size: 14,
+                                color: Colors.grey[500],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _formatDateTime(item.createdAt),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                              if (item.fileSize != null) ...[
+                                const SizedBox(width: 16),
+                                Icon(
+                                  Icons.storage,
+                                  size: 14,
+                                  color: Colors.grey[500],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _formatFileSize(item.fileSize!),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 收藏按钮
+                    IconButton(
+                      icon: Icon(
+                        item.isFavorite ? Icons.star : Icons.star_border,
+                        color: item.isFavorite ? Colors.amber : Colors.grey,
+                      ),
+                      onPressed: () {
+                        if (item.id != null) {
+                          audioLibraryService.toggleFavorite(item.id!);
+                        }
+                      },
+                    ),
+                    // 播放状态指示器
+                    if (isCurrent)
+                      Icon(
+                        isPlaying ? Icons.volume_up : Icons.pause,
+                        color: Theme.of(context).primaryColor,
+                        size: 24,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        if (difference.inMinutes == 0) {
+          return '刚刚';
+        }
+        return '${difference.inMinutes}分钟前';
+      }
+      return '${difference.inHours}小时前';
+    } else if (difference.inDays == 1) {
+      return '昨天';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}天前';
+    } else {
+      return '${dateTime.month}月${dateTime.day}日';
+    }
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }

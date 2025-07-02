@@ -4,7 +4,6 @@ import 'package:auralab_0701/screens/tts/tts_processing.dart';
 import 'package:auralab_0701/screens/asr_page.dart';
 import 'package:auralab_0701/screens/tabs.dart';
 import 'package:auralab_0701/screens/music_player_page.dart';
-import 'package:auralab_0701/screens/test_player_page.dart';
 
 final router = GoRouter(
   routes: [
@@ -18,10 +17,6 @@ final router = GoRouter(
     GoRoute(
       path: '/music-player',
       builder: (context, state) => const MusicPlayerPage(),
-    ),
-    GoRoute(
-      path: '/test-player',
-      builder: (context, state) => const TestPlayerPage(),
     ),
   ],
 );

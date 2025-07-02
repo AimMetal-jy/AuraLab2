@@ -31,6 +31,19 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
   List<File> _audioFiles = [];
   bool _isLoadingFiles = false;
 
+  // 显示 SnackBar 的辅助函数
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    scaffoldMessenger.removeCurrentSnackBar();
+    scaffoldMessenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -66,11 +79,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
       setState(() {
         _isLoadingFiles = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('加载音频文件失败: $e')));
-      }
+      _showSnackBar('加载音频文件失败: $e', isError: true);
     }
   }
 
@@ -469,11 +478,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
           _loadTexts();
         });
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
-        }
+        _showSnackBar('保存失败: $e', isError: true);
       }
     }
   }
@@ -491,11 +496,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
         _loadTexts();
       });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('删除失败: $e')));
-      }
+      _showSnackBar('删除失败: $e', isError: true);
     }
   }
 
@@ -545,9 +546,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
 
   Future<void> _generateSingleTTS(String text) async {
     if (_selectedVoice == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先选择音色')));
+      _showSnackBar('请先选择音色', isError: true);
       return;
     }
 
@@ -557,12 +556,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
       });
 
       // 显示上传成功提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('文字上传成功，正在处理...'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      _showSnackBar('文字上传成功，正在处理...');
 
       await _ttsService.generateTTS(
         text: text,
@@ -571,15 +565,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
       );
 
       // 显示处理成功提示
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('音频处理成功！已保存到本地'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
+      _showSnackBar('音频处理成功！已保存到本地');
 
       // 刷新音频文件列表
       await _loadAudioFiles();
@@ -589,11 +575,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
         _tabController.animateTo(1);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('TTS生成失败: $e'), backgroundColor: Colors.red),
-        );
-      }
+      _showSnackBar('TTS生成失败: $e', isError: true);
     } finally {
       if (mounted) {
         setState(() {
@@ -605,18 +587,14 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
 
   Future<void> _uploadToTts() async {
     if (_selectedVoice == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先选择音色')));
+      _showSnackBar('请先选择音色', isError: true);
       return;
     }
 
     final texts = await _selectionService.selectedTexts;
     if (texts.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('没有待处理的文字')));
+        _showSnackBar('没有待处理的文字', isError: true);
       }
       return;
     }
@@ -627,14 +605,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
       });
 
       // 显示上传成功提示
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${texts.length}条文字上传成功，正在批量处理...'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+      _showSnackBar('${texts.length}条文字上传成功，正在批量处理...');
 
       int successCount = 0;
       int failCount = 0;
@@ -654,19 +625,11 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
       }
 
       // 显示批量处理结果
-      if (mounted) {
-        final message = failCount == 0
-            ? '批量处理完成！成功生成$successCount个音频文件'
-            : '批量处理完成！成功$successCount个，失败$failCount个';
+      final message = failCount == 0
+          ? '批量处理完成！成功生成$successCount个音频文件'
+          : '批量处理完成！成功$successCount个，失败$failCount个';
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: failCount == 0 ? Colors.green : Colors.orange,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+      _showSnackBar(message);
 
       // 刷新音频文件列表
       await _loadAudioFiles();
@@ -676,11 +639,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
         _tabController.animateTo(1);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('批量TTS生成失败: $e'), backgroundColor: Colors.red),
-        );
-      }
+      _showSnackBar('批量TTS生成失败: $e', isError: true);
     } finally {
       if (mounted) {
         setState(() {
@@ -709,11 +668,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('播放失败: $e')));
-      }
+      _showSnackBar('播放失败: $e', isError: true);
     }
   }
 
@@ -747,24 +702,12 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
           setState(() {
             _audioFiles.removeAt(index);
           });
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('文件删除成功')));
-          }
+          _showSnackBar('文件删除成功');
         } else {
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('文件删除失败')));
-          }
+          _showSnackBar('文件删除失败');
         }
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('删除失败: $e')));
-        }
+        _showSnackBar('删除失败: $e', isError: true);
       }
     }
   }

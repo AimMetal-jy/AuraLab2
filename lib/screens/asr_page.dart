@@ -78,16 +78,12 @@ class _AsrPageState extends State<AsrPage> {
         });
 
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('已选择文件: $_selectedFileName')));
+          _showStatusSnackBar('已选择文件: $_selectedFileName');
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('选择文件失败: $e')));
+        _showStatusSnackBar('选择文件失败: $e', isError: true);
       }
     }
   }
@@ -95,9 +91,7 @@ class _AsrPageState extends State<AsrPage> {
   /// 提交转录任务
   Future<void> _submitTranscriptionTask() async {
     if (_selectedAudioFile == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先选择音频文件')));
+      _showStatusSnackBar('请先选择音频文件', isError: true);
       return;
     }
 
@@ -124,9 +118,7 @@ class _AsrPageState extends State<AsrPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('任务提交成功！任务ID: ${response.taskId}')),
-        );
+        _showStatusSnackBar('任务提交成功！任务ID: ${response.taskId}');
       }
 
       // 开始轮询任务状态
@@ -138,9 +130,7 @@ class _AsrPageState extends State<AsrPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('提交任务失败: $e')));
+        _showStatusSnackBar(_statusMessage!, isError: true);
       }
     }
   }
@@ -149,13 +139,23 @@ class _AsrPageState extends State<AsrPage> {
   Future<void> _pollTaskStatus() async {
     if (_currentTaskId == null) return;
 
-    while (_taskStatus == TranscriptionStatus.processing ||
-        _taskStatus == TranscriptionStatus.pending) {
-      await Future.delayed(const Duration(seconds: 5));
+    int consecutiveErrors = 0;
+    const int maxConsecutiveErrors = 3;
+    const int maxPollAttempts = 180; // 最多轮询3分钟 (180 * 1秒)
+    int pollAttempts = 0;
+
+    while ((_taskStatus == TranscriptionStatus.processing ||
+            _taskStatus == TranscriptionStatus.pending) &&
+        pollAttempts < maxPollAttempts) {
+      pollAttempts++;
+      await Future.delayed(const Duration(seconds: 1));
 
       try {
         TranscriptionStatusResponse statusResponse = await _transcriptionService
             .getTaskStatus(_currentTaskId!, _selectedModel);
+
+        // 重置连续错误计数
+        consecutiveErrors = 0;
 
         setState(() {
           _taskStatus = statusResponse.status;
@@ -191,6 +191,7 @@ class _AsrPageState extends State<AsrPage> {
             }
           } catch (e) {
             debugPrint('获取WhisperX详细状态失败: $e');
+            // 详细状态获取失败不影响主要轮询逻辑
           }
         }
 
@@ -201,11 +202,34 @@ class _AsrPageState extends State<AsrPage> {
           break;
         }
       } catch (e) {
-        setState(() {
-          _statusMessage = '查询任务状态失败: $e';
-        });
-        break;
+        consecutiveErrors++;
+        debugPrint('轮询任务状态失败 (第$consecutiveErrors次): $e');
+
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          setState(() {
+            _statusMessage = '连续查询任务状态失败，请检查网络连接或稍后重试';
+            _taskStatus = TranscriptionStatus.failed;
+          });
+          break;
+        } else {
+          // 连续错误未达到上限，继续轮询但显示警告
+          setState(() {
+            _statusMessage =
+                '查询状态遇到问题，正在重试... ($consecutiveErrors/$maxConsecutiveErrors)';
+          });
+          // 增加重试延迟
+          await Future.delayed(Duration(seconds: consecutiveErrors * 2));
+        }
       }
+    }
+
+    // 如果达到最大轮询次数仍未完成
+    if (pollAttempts >= maxPollAttempts &&
+        (_taskStatus == TranscriptionStatus.processing ||
+            _taskStatus == TranscriptionStatus.pending)) {
+      setState(() {
+        _statusMessage = '任务处理超时，请稍后手动刷新状态';
+      });
     }
 
     setState(() {
@@ -231,15 +255,11 @@ class _AsrPageState extends State<AsrPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('转录完成！')));
+        _showStatusSnackBar('转录完成！');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('下载结果失败: $e')));
+        _showStatusSnackBar('下载结果失败: $e', isError: true);
       }
     }
   }
@@ -264,8 +284,14 @@ class _AsrPageState extends State<AsrPage> {
     if (_currentTaskId == null) return;
 
     try {
+      debugPrint('开始刷新任务状态，任务ID: $_currentTaskId, 模型: $_selectedModel');
+
       TranscriptionStatusResponse statusResponse = await _transcriptionService
           .getTaskStatus(_currentTaskId!, _selectedModel);
+
+      debugPrint(
+        '状态查询成功: ${statusResponse.status}, 消息: ${statusResponse.message}',
+      );
 
       setState(() {
         _taskStatus = statusResponse.status;
@@ -276,10 +302,12 @@ class _AsrPageState extends State<AsrPage> {
       // 对于WhisperX，获取详细状态信息
       if (_selectedModel == TranscriptionModel.whisperx) {
         try {
+          debugPrint('正在获取WhisperX详细状态...');
           _whisperxDetailedStatus = await _transcriptionService
               .getWhisperXDetailedStatus(_currentTaskId!);
 
           if (_whisperxDetailedStatus != null) {
+            debugPrint('WhisperX详细状态: $_whisperxDetailedStatus');
             final availableFiles =
                 _whisperxDetailedStatus!['available_files'] as List?;
             setState(() {
@@ -292,29 +320,40 @@ class _AsrPageState extends State<AsrPage> {
                 _statusMessage =
                     '${_getStatusText(_taskStatus!)} • 可用文件: ${_availableFiles.join(', ')}';
               });
+              debugPrint('可用文件更新: $_availableFiles');
             }
+          } else {
+            debugPrint('WhisperX详细状态为null');
           }
         } catch (e) {
           debugPrint('获取WhisperX详细状态失败: $e');
+          // 详细状态获取失败不影响主要状态刷新
         }
       }
 
       // 如果任务已完成且还没有下载结果，则自动下载
       if (statusResponse.status == TranscriptionStatus.completed &&
           _transcriptionResult == null) {
+        debugPrint('任务已完成，开始自动下载结果...');
         await _downloadTranscriptionResult();
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('状态已刷新')));
+        _showStatusSnackBar('状态已刷新');
       }
     } catch (e) {
+      debugPrint('刷新状态失败，详细错误: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('刷新状态失败: $e')));
+        String errorMessage = '刷新状态失败';
+        if (e.toString().contains('404')) {
+          errorMessage = '任务不存在或已过期';
+        } else if (e.toString().contains('timeout') ||
+            e.toString().contains('connection')) {
+          errorMessage = '网络连接超时，请检查网络';
+        } else if (e.toString().contains('500')) {
+          errorMessage = '服务器内部错误，请稍后重试';
+        }
+        _showStatusSnackBar('$errorMessage: $e', isError: true);
       }
     }
   }
@@ -770,9 +809,7 @@ class _AsrPageState extends State<AsrPage> {
                             onPressed: () {
                               // 复制到剪贴板
                               // Clipboard.setData(ClipboardData(text: _transcriptionResult!));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('结果已复制到剪贴板')),
-                              );
+                              _showStatusSnackBar('结果已复制到剪贴板');
                             },
                             icon: const Icon(Icons.copy),
                             tooltip: '复制结果',
@@ -969,9 +1006,7 @@ class _AsrPageState extends State<AsrPage> {
   /// 打开音频播放器
   Future<void> _openAudioPlayer() async {
     if (_currentTaskId == null || _selectedAudioFile == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('缺少必要的任务信息或音频文件')));
+      _showStatusSnackBar('缺少必要的任务信息或音频文件', isError: true);
       return;
     }
 
@@ -1002,9 +1037,7 @@ class _AsrPageState extends State<AsrPage> {
 
       if (playerData == null) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('播放器数据尚未准备就绪，请稍后重试')));
+          _showStatusSnackBar('播放器数据尚未准备就绪，请稍后重试', isError: true);
         }
         return;
       }
@@ -1031,9 +1064,7 @@ class _AsrPageState extends State<AsrPage> {
     } catch (e) {
       if (mounted) {
         Navigator.of(context).pop(); // 关闭加载对话框
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('打开播放器失败: $e')));
+        _showStatusSnackBar('打开播放器失败: $e', isError: true);
       }
       debugPrint('打开播放器失败: $e');
     }
@@ -1042,9 +1073,7 @@ class _AsrPageState extends State<AsrPage> {
   /// 下载所有可用的WhisperX文件
   Future<void> _downloadAllAvailableFiles() async {
     if (_currentTaskId == null || _availableFiles.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('没有可下载的文件')));
+      _showStatusSnackBar('没有可下载的文件', isError: true);
       return;
     }
 
@@ -1081,24 +1110,18 @@ class _AsrPageState extends State<AsrPage> {
         Navigator.of(context).pop(); // 关闭加载对话框
 
         if (downloadedFiles.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('成功下载 ${downloadedFiles.length} 个文件')),
-          );
+          _showStatusSnackBar('成功下载 ${downloadedFiles.length} 个文件');
 
           // 显示下载结果
           _showDownloadResults(downloadedFiles);
         } else {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('没有成功下载任何文件')));
+          _showStatusSnackBar('没有成功下载任何文件', isError: true);
         }
       }
     } catch (e) {
       if (mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('下载文件失败: $e')));
+        _showStatusSnackBar('下载文件失败: $e', isError: true);
       }
     }
   }
@@ -1106,9 +1129,7 @@ class _AsrPageState extends State<AsrPage> {
   /// 查看WhisperX结果
   Future<void> _viewWhisperXResults() async {
     if (_currentTaskId == null || _availableFiles.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('没有可查看的结果')));
+      _showStatusSnackBar('没有可查看的结果', isError: true);
       return;
     }
 
@@ -1143,9 +1164,7 @@ class _AsrPageState extends State<AsrPage> {
                 onPressed: () {
                   // TODO: 实现复制到剪贴板功能
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
+                  _showStatusSnackBar('已复制到剪贴板');
                 },
                 child: const Text('复制'),
               ),
@@ -1155,9 +1174,7 @@ class _AsrPageState extends State<AsrPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('查看结果失败: $e')));
+        _showStatusSnackBar('查看结果失败: $e', isError: true);
       }
     }
   }
@@ -1227,5 +1244,18 @@ class _AsrPageState extends State<AsrPage> {
       default:
         return fileType;
     }
+  }
+
+  // 显示状态通知的辅助函数
+  void _showStatusSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    scaffoldMessenger.removeCurrentSnackBar();
+    scaffoldMessenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
+      ),
+    );
   }
 }

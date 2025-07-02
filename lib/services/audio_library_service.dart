@@ -2,10 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
+import './database_helper.dart';
 
-/// 音频文件信息
+/// 音频文件信息 - 数据模型
 class AudioItem {
-  final String id;
+  final int? id; // 数据库自增ID
   final String title;
   final String artist;
   final String filePath;
@@ -14,8 +15,13 @@ class AudioItem {
   final int? fileSize;
   final Duration? duration;
 
+  // 新增字段
+  final int playCount;
+  final bool isFavorite;
+  final DateTime? lastPlayed;
+
   AudioItem({
-    required this.id,
+    this.id,
     required this.title,
     required this.artist,
     required this.filePath,
@@ -23,10 +29,80 @@ class AudioItem {
     required this.createdAt,
     this.fileSize,
     this.duration,
+    this.playCount = 0,
+    this.isFavorite = false,
+    this.lastPlayed,
   });
 
   bool get isLocal => type == AudioType.local;
   bool get isTTS => type == AudioType.tts;
+
+  // 用于创建副本并更新值
+  AudioItem copyWith({
+    int? id,
+    String? title,
+    String? artist,
+    String? filePath,
+    AudioType? type,
+    DateTime? createdAt,
+    int? fileSize,
+    Duration? duration,
+    int? playCount,
+    bool? isFavorite,
+    DateTime? lastPlayed,
+  }) {
+    return AudioItem(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      filePath: filePath ?? this.filePath,
+      type: type ?? this.type,
+      createdAt: createdAt ?? this.createdAt,
+      fileSize: fileSize ?? this.fileSize,
+      duration: duration ?? this.duration,
+      playCount: playCount ?? this.playCount,
+      isFavorite: isFavorite ?? this.isFavorite,
+      lastPlayed: lastPlayed ?? this.lastPlayed,
+    );
+  }
+
+  // 从 Map 转换为 AudioItem 对象
+  factory AudioItem.fromMap(Map<String, dynamic> map) {
+    return AudioItem(
+      id: map['id'],
+      title: map['title'],
+      artist: map['artist'],
+      filePath: map['filePath'],
+      type: AudioType.values.byName(map['type']),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
+      fileSize: map['fileSize'],
+      duration: map['duration'] != null
+          ? Duration(milliseconds: map['duration'])
+          : null,
+      playCount: map['playCount'] ?? 0,
+      isFavorite: (map['isFavorite'] ?? 0) == 1,
+      lastPlayed: map['lastPlayed'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['lastPlayed'])
+          : null,
+    );
+  }
+
+  // 转换为 Map 以便存入数据库
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'artist': artist,
+      'filePath': filePath,
+      'type': type.name,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'fileSize': fileSize,
+      'duration': duration?.inMilliseconds,
+      'playCount': playCount,
+      'isFavorite': isFavorite ? 1 : 0,
+      'lastPlayed': lastPlayed?.millisecondsSinceEpoch,
+    };
+  }
 }
 
 /// 音频类型
@@ -35,16 +111,18 @@ enum AudioType {
   tts, // TTS生成的音频
 }
 
-/// 音频库服务
+/// 音频库服务 (由数据库驱动)
 class AudioLibraryService extends ChangeNotifier {
   static final AudioLibraryService _instance = AudioLibraryService._internal();
   factory AudioLibraryService() => _instance;
-  AudioLibraryService._internal() {
-    _loadAudioLibrary();
-  }
 
+  final DatabaseHelper _dbHelper = DatabaseHelper();
   final List<AudioItem> _audioItems = [];
   bool _isLoading = false;
+
+  AudioLibraryService._internal() {
+    refreshLibrary();
+  }
 
   List<AudioItem> get audioItems => List.unmodifiable(_audioItems);
   List<AudioItem> get ttsAudioItems =>
@@ -55,43 +133,58 @@ class AudioLibraryService extends ChangeNotifier {
   int get totalCount => _audioItems.length;
   int get ttsCount => ttsAudioItems.length;
 
-  /// 初始化加载音频库
-  Future<void> _loadAudioLibrary() async {
+  /// 从数据库和文件系统刷新整个音频库
+  Future<void> refreshLibrary() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      // 加载本地预置音频
-      _loadLocalAudioItems();
+      // 1. 从数据库加载所有项目
+      final dbItems = await _dbHelper.getAllAudioItems();
+      _audioItems.clear();
+      _audioItems.addAll(dbItems);
 
-      // 加载TTS生成的音频
-      await _loadTTSAudioItems();
+      // 2. 同步文件系统
+      await _syncWithFileSystem();
     } catch (e) {
-      debugPrint('加载音频库失败: $e');
+      debugPrint('刷新音频库失败: $e');
     } finally {
       _isLoading = false;
+      _sortItems();
       notifyListeners();
     }
   }
 
-  /// 加载本地预置音频
-  void _loadLocalAudioItems() {
-    // 不再添加硬编码的示例音频
-    // 用户可以通过主页的加号按钮添加自己的音频文件
+  /// 智能同步数据库与文件系统
+  Future<void> _syncWithFileSystem() async {
+    // 检查TTS目录下的新文件
+    await _syncTtsDirectory();
+
+    // 检查数据库中记录的文件是否存在
+    final List<AudioItem> itemsToRemove = [];
+    for (final item in _audioItems) {
+      final file = File(item.filePath);
+      if (!await file.exists()) {
+        itemsToRemove.add(item);
+      }
+    }
+
+    // 从数据库和内存中移除不存在的文件记录
+    if (itemsToRemove.isNotEmpty) {
+      for (final item in itemsToRemove) {
+        await _dbHelper.deleteAudioItemByPath(item.filePath);
+        _audioItems.removeWhere((i) => i.id == item.id);
+      }
+    }
   }
 
-  /// 加载TTS生成的音频文件
-  Future<void> _loadTTSAudioItems() async {
+  /// 同步TTS目录
+  Future<void> _syncTtsDirectory() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final ttsDir = Directory(path.join(directory.path, 'tts_audio'));
 
-      if (!await ttsDir.exists()) {
-        return;
-      }
-
-      // 清空现有的TTS音频项，避免重复
-      _audioItems.removeWhere((item) => item.isTTS);
+      if (!await ttsDir.exists()) return;
 
       final files = await ttsDir
           .list()
@@ -100,266 +193,187 @@ class AudioLibraryService extends ChangeNotifier {
           .toList();
 
       for (final file in files) {
-        final fileName = path.basename(file.path);
-        final fileStats = await file.stat();
-
-        // 从文件名解析信息
-        // 格式: tts_timestamp_mode_vcn.wav
-        final parts = fileName.replaceAll('.wav', '').split('_');
-        String mode = 'unknown';
-        String vcn = 'unknown';
-
-        if (parts.length >= 4) {
-          mode = parts[2];
-          vcn = parts.sublist(3).join('_');
-        }
-
-        // 使用文件路径作为唯一标识符，确保不会重复
-        final id = 'tts_${file.path}';
-
-        // 检查是否已经存在相同ID的项目，避免重复
-        if (_audioItems.any((item) => item.id == id)) {
+        // 如果文件已在数据库中，则跳过
+        if (_audioItems.any((item) => item.filePath == file.path)) {
           continue;
         }
 
-        final audioItem = AudioItem(
-          id: id,
-          title: fileName, // 使用文件名作为标题
-          artist:
-              'TTS生成 - ${_getVoiceName(vcn)} (${_getModeName(mode)})', // 音色信息作为艺术家信息
-          filePath: file.path,
-          type: AudioType.tts,
-          createdAt: fileStats.modified,
-          fileSize: fileStats.size,
-        );
-
-        _audioItems.add(audioItem);
+        // 发现新文件，创建并存入数据库
+        final newItem = await _createTtsAudioItem(file);
+        final dbItem = await _dbHelper.upsertAudioItem(newItem);
+        _audioItems.add(dbItem);
       }
-
-      // 按创建时间排序，最新的在前
-      _audioItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (e) {
-      debugPrint('加载TTS音频文件失败: $e');
+      debugPrint('同步TTS目录失败: $e');
     }
   }
 
-  /// 添加TTS生成的音频到库中
+  /// 批量添加本地音频文件到数据库
+  Future<int> addLocalAudioBatch(List<String> filePaths) async {
+    int count = 0;
+    for (final filePath in filePaths) {
+      try {
+        final file = File(filePath);
+        if (!await file.exists()) continue;
+
+        // 检查数据库中是否已存在
+        if (await _dbHelper.getAudioItemByPath(filePath) != null) continue;
+
+        final newItem = await _createLocalAudioItem(file);
+        final dbItem = await _dbHelper.upsertAudioItem(newItem);
+        _audioItems.add(dbItem);
+        count++;
+      } catch (e) {
+        debugPrint('添加文件 $filePath 失败: $e');
+      }
+    }
+    if (count > 0) {
+      _sortItems();
+      notifyListeners();
+    }
+    return count;
+  }
+
+  /// 删除一个音频项（从数据库和文件系统）
+  Future<void> deleteAudioItem(AudioItem item) async {
+    try {
+      await _dbHelper.deleteAudioItemByPath(item.filePath);
+      _audioItems.removeWhere((i) => i.id == item.id);
+
+      final file = File(item.filePath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('删除音频项失败: $e');
+      rethrow;
+    }
+  }
+
+  /// 切换收藏状态
+  Future<void> toggleFavorite(int itemId) async {
+    final index = _audioItems.indexWhere((item) => item.id == itemId);
+    if (index == -1) return;
+
+    final item = _audioItems[index];
+    final updatedItem = item.copyWith(isFavorite: !item.isFavorite);
+
+    _audioItems[index] = updatedItem;
+    await _dbHelper.updateAudioItem(updatedItem);
+    notifyListeners();
+  }
+
+  /// 增加播放次数并更新最后播放时间
+  Future<void> incrementPlayCount(int itemId) async {
+    final index = _audioItems.indexWhere((item) => item.id == itemId);
+    if (index == -1) return;
+
+    final item = _audioItems[index];
+    final updatedItem = item.copyWith(
+      playCount: item.playCount + 1,
+      lastPlayed: DateTime.now(),
+    );
+
+    _audioItems[index] = updatedItem;
+    await _dbHelper.updateAudioItem(updatedItem);
+    // 不需要通知监听器，因为这通常是后台操作，不会立即影响UI
+  }
+
+  /// 搜索音频文件
+  List<AudioItem> search(String query) {
+    if (query.isEmpty) return _audioItems;
+    
+    final lowerQuery = query.toLowerCase();
+    return _audioItems.where((item) {
+      return item.title.toLowerCase().contains(lowerQuery) ||
+             item.artist.toLowerCase().contains(lowerQuery);
+    }).toList();
+  }
+
+  /// 删除音频（通过ID）
+  Future<void> removeAudio(int? itemId) async {
+    if (itemId == null) return;
+    
+    final item = _audioItems.firstWhere(
+      (item) => item.id == itemId,
+      orElse: () => throw Exception('音频项未找到'),
+    );
+    
+    await deleteAudioItem(item);
+  }
+
+  /// 添加单个本地音频文件
+  Future<void> addLocalAudio(String filePath) async {
+    await addLocalAudioBatch([filePath]);
+  }
+
+  /// 添加TTS音频文件
   Future<void> addTTSAudio(String filePath, String mode, String vcn) async {
     try {
       final file = File(filePath);
       if (!await file.exists()) {
-        throw Exception('音频文件不存在');
+        throw Exception('文件不存在: $filePath');
       }
 
-      final fileName = path.basename(filePath);
-      final fileStats = await file.stat();
-
-      // 使用文件路径作为唯一标识符，确保ID一致性
-      final id = 'tts_$filePath';
-
-      // 检查是否已存在相同ID的文件，避免重复添加
-      final existingIndex = _audioItems.indexWhere((item) => item.id == id);
-
-      final audioItem = AudioItem(
-        id: id,
-        title: fileName, // 使用文件名作为标题
-        artist: 'TTS生成 - ${_getVoiceName(vcn)} (${_getModeName(mode)})',
-        filePath: filePath,
-        type: AudioType.tts,
-        createdAt: fileStats.modified,
-        fileSize: fileStats.size,
-      );
-
-      if (existingIndex != -1) {
-        // 如果已存在，更新而不是添加
-        _audioItems[existingIndex] = audioItem;
-      } else {
-        // 不存在则添加新项到列表开头
-        _audioItems.insert(0, audioItem);
+      // 检查数据库中是否已存在
+      if (await _dbHelper.getAudioItemByPath(filePath) != null) {
+        debugPrint('TTS文件已存在，跳过添加: $filePath');
+        return;
       }
 
-      // 重新排序，确保最新的在前面
-      _audioItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
+      final newItem = await _createTtsAudioItem(file);
+      final dbItem = await _dbHelper.upsertAudioItem(newItem);
+      _audioItems.add(dbItem);
+      
+      _sortItems();
       notifyListeners();
+      debugPrint('TTS音频已添加到库: ${newItem.title}');
     } catch (e) {
       debugPrint('添加TTS音频失败: $e');
       rethrow;
     }
   }
 
-  /// 添加本地音频文件到库中
-  Future<void> addLocalAudio(String filePath, {String? customTitle}) async {
-    try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        throw Exception('音频文件不存在');
-      }
+  // --- 私有辅助方法 ---
 
-      final fileName = path.basename(filePath);
-      final fileStats = await file.stat();
+  void _sortItems() {
+    _audioItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
 
-      // 使用文件路径作为唯一标识符，确保ID一致性
-      final id = 'local_$filePath';
-
-      // 检查是否已存在相同ID的文件，避免重复添加
-      final existingIndex = _audioItems.indexWhere((item) => item.id == id);
-
-      // 从文件名提取标题（去掉扩展名）
-      final titleWithoutExt = path.basenameWithoutExtension(fileName);
-
-      final audioItem = AudioItem(
-        id: id,
-        title: customTitle ?? titleWithoutExt,
-        artist: '本地音频',
-        filePath: filePath,
-        type: AudioType.local,
-        createdAt: fileStats.modified,
-        fileSize: fileStats.size,
-      );
-
-      if (existingIndex != -1) {
-        // 如果已存在，更新而不是添加
-        _audioItems[existingIndex] = audioItem;
-      } else {
-        // 不存在则添加新项到列表开头
-        _audioItems.insert(0, audioItem);
-      }
-
-      // 重新排序，确保最新的在前面
-      _audioItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-      notifyListeners();
-    } catch (e) {
-      debugPrint('添加本地音频失败: $e');
-      rethrow;
+  Future<AudioItem> _createTtsAudioItem(File file) async {
+    final fileName = path.basename(file.path);
+    final fileStats = await file.stat();
+    final parts = fileName.replaceAll('.wav', '').split('_');
+    String mode = 'unknown', vcn = 'unknown';
+    if (parts.length >= 4) {
+      mode = parts[2];
+      vcn = parts.sublist(3).join('_');
     }
+    return AudioItem(
+      title: fileName,
+      artist: 'TTS生成 - ${_getVoiceName(vcn)} (${_getModeName(mode)})',
+      filePath: file.path,
+      type: AudioType.tts,
+      createdAt: fileStats.modified,
+      fileSize: fileStats.size,
+    );
   }
 
-  /// 批量添加本地音频文件
-  Future<void> addLocalAudioBatch(List<String> filePaths) async {
-    try {
-      for (final filePath in filePaths) {
-        final file = File(filePath);
-        if (!await file.exists()) {
-          debugPrint('跳过不存在的文件: $filePath');
-          continue;
-        }
-
-        final fileName = path.basename(filePath);
-        final fileStats = await file.stat();
-
-        // 使用文件路径作为唯一标识符
-        final id = 'local_$filePath';
-
-        // 检查是否已存在相同ID的文件，避免重复添加
-        if (_audioItems.any((item) => item.id == id)) {
-          debugPrint('文件已存在，跳过: $fileName');
-          continue;
-        }
-
-        // 从文件名提取标题（去掉扩展名）
-        final titleWithoutExt = path.basenameWithoutExtension(fileName);
-
-        final audioItem = AudioItem(
-          id: id,
-          title: titleWithoutExt,
-          artist: '本地音频',
-          filePath: filePath,
-          type: AudioType.local,
-          createdAt: fileStats.modified,
-          fileSize: fileStats.size,
-        );
-
-        _audioItems.insert(0, audioItem);
-      }
-
-      // 重新排序，确保最新的在前面
-      _audioItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-      notifyListeners();
-    } catch (e) {
-      debugPrint('批量添加本地音频失败: $e');
-      rethrow;
-    }
+  Future<AudioItem> _createLocalAudioItem(File file) async {
+    final fileName = path.basename(file.path);
+    final fileStats = await file.stat();
+    final titleWithoutExt = path.basenameWithoutExtension(fileName);
+    return AudioItem(
+      title: titleWithoutExt,
+      artist: '本地音频',
+      filePath: file.path,
+      type: AudioType.local,
+      createdAt: fileStats.modified,
+      fileSize: fileStats.size,
+    );
   }
 
-  /// 从库中移除音频
-  Future<void> removeAudio(String id) async {
-    try {
-      final index = _audioItems.indexWhere((item) => item.id == id);
-      if (index == -1) {
-        debugPrint('尝试删除不存在的音频ID: $id');
-        return;
-      }
-
-      final audioItem = _audioItems[index];
-      debugPrint('删除音频: ${audioItem.title} (${audioItem.filePath})');
-
-      // 如果是TTS文件，同时删除物理文件
-      if (audioItem.isTTS) {
-        final file = File(audioItem.filePath);
-        if (await file.exists()) {
-          await file.delete();
-          debugPrint('已删除TTS文件: ${audioItem.filePath}');
-        } else {
-          debugPrint('TTS文件已不存在: ${audioItem.filePath}');
-        }
-      }
-
-      _audioItems.removeAt(index);
-      notifyListeners();
-      debugPrint('音频已从库中移除: ${audioItem.title}');
-    } catch (e) {
-      debugPrint('移除音频失败: $e');
-      rethrow;
-    }
-  }
-
-  /// 刷新音频库
-  Future<void> refresh() async {
-    _audioItems.clear();
-    await _loadAudioLibrary();
-  }
-
-  /// 搜索音频
-  List<AudioItem> search(String query) {
-    if (query.isEmpty) return audioItems;
-
-    final lowerQuery = query.toLowerCase();
-    return _audioItems.where((item) {
-      return item.title.toLowerCase().contains(lowerQuery) ||
-          item.artist.toLowerCase().contains(lowerQuery);
-    }).toList();
-  }
-
-  /// 根据类型获取音频
-  List<AudioItem> getAudioByType(AudioType type) {
-    return _audioItems.where((item) => item.type == type).toList();
-  }
-
-  /// 获取最近添加的音频
-  List<AudioItem> getRecentAudio({int limit = 10}) {
-    final sorted = List<AudioItem>.from(_audioItems)
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return sorted.take(limit).toList();
-  }
-
-  /// 获取模式的中文名称
-  String _getModeName(String mode) {
-    switch (mode) {
-      case 'human':
-        return '大模型';
-      case 'short':
-        return '短音频';
-      case 'long':
-        return '长音频';
-      default:
-        return mode;
-    }
-  }
-
-  /// 获取音色的中文名称
   String _getVoiceName(String vcn) {
     // 这里可以从TTSVoices配置中获取完整的中文名称
     // 暂时直接返回vcn
@@ -398,5 +412,18 @@ class AudioLibraryService extends ChangeNotifier {
     };
 
     return voiceMap[vcn] ?? vcn;
+  }
+
+  String _getModeName(String mode) {
+    switch (mode) {
+      case 'human':
+        return '大模型';
+      case 'short':
+        return '短音频';
+      case 'long':
+        return '长音频';
+      default:
+        return mode;
+    }
   }
 }
