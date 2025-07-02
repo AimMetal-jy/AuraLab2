@@ -76,17 +76,8 @@ class AudioLibraryService extends ChangeNotifier {
 
   /// 加载本地预置音频
   void _loadLocalAudioItems() {
-    // 添加示例音频
-    _audioItems.add(
-      AudioItem(
-        id: 'local_english_pod',
-        title: 'English Pod Sample',
-        artist: 'Test Audio',
-        filePath: 'audio/English_Pod_30s.wav',
-        type: AudioType.local,
-        createdAt: DateTime.now(),
-      ),
-    );
+    // 不再添加硬编码的示例音频
+    // 用户可以通过主页的加号按钮添加自己的音频文件
   }
 
   /// 加载TTS生成的音频文件
@@ -197,24 +188,128 @@ class AudioLibraryService extends ChangeNotifier {
     }
   }
 
+  /// 添加本地音频文件到库中
+  Future<void> addLocalAudio(String filePath, {String? customTitle}) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('音频文件不存在');
+      }
+
+      final fileName = path.basename(filePath);
+      final fileStats = await file.stat();
+
+      // 使用文件路径作为唯一标识符，确保ID一致性
+      final id = 'local_$filePath';
+
+      // 检查是否已存在相同ID的文件，避免重复添加
+      final existingIndex = _audioItems.indexWhere((item) => item.id == id);
+
+      // 从文件名提取标题（去掉扩展名）
+      final titleWithoutExt = path.basenameWithoutExtension(fileName);
+
+      final audioItem = AudioItem(
+        id: id,
+        title: customTitle ?? titleWithoutExt,
+        artist: '本地音频',
+        filePath: filePath,
+        type: AudioType.local,
+        createdAt: fileStats.modified,
+        fileSize: fileStats.size,
+      );
+
+      if (existingIndex != -1) {
+        // 如果已存在，更新而不是添加
+        _audioItems[existingIndex] = audioItem;
+      } else {
+        // 不存在则添加新项到列表开头
+        _audioItems.insert(0, audioItem);
+      }
+
+      // 重新排序，确保最新的在前面
+      _audioItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('添加本地音频失败: $e');
+      rethrow;
+    }
+  }
+
+  /// 批量添加本地音频文件
+  Future<void> addLocalAudioBatch(List<String> filePaths) async {
+    try {
+      for (final filePath in filePaths) {
+        final file = File(filePath);
+        if (!await file.exists()) {
+          debugPrint('跳过不存在的文件: $filePath');
+          continue;
+        }
+
+        final fileName = path.basename(filePath);
+        final fileStats = await file.stat();
+
+        // 使用文件路径作为唯一标识符
+        final id = 'local_$filePath';
+
+        // 检查是否已存在相同ID的文件，避免重复添加
+        if (_audioItems.any((item) => item.id == id)) {
+          debugPrint('文件已存在，跳过: $fileName');
+          continue;
+        }
+
+        // 从文件名提取标题（去掉扩展名）
+        final titleWithoutExt = path.basenameWithoutExtension(fileName);
+
+        final audioItem = AudioItem(
+          id: id,
+          title: titleWithoutExt,
+          artist: '本地音频',
+          filePath: filePath,
+          type: AudioType.local,
+          createdAt: fileStats.modified,
+          fileSize: fileStats.size,
+        );
+
+        _audioItems.insert(0, audioItem);
+      }
+
+      // 重新排序，确保最新的在前面
+      _audioItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('批量添加本地音频失败: $e');
+      rethrow;
+    }
+  }
+
   /// 从库中移除音频
   Future<void> removeAudio(String id) async {
     try {
       final index = _audioItems.indexWhere((item) => item.id == id);
-      if (index == -1) return;
+      if (index == -1) {
+        debugPrint('尝试删除不存在的音频ID: $id');
+        return;
+      }
 
       final audioItem = _audioItems[index];
+      debugPrint('删除音频: ${audioItem.title} (${audioItem.filePath})');
 
       // 如果是TTS文件，同时删除物理文件
       if (audioItem.isTTS) {
         final file = File(audioItem.filePath);
         if (await file.exists()) {
           await file.delete();
+          debugPrint('已删除TTS文件: ${audioItem.filePath}');
+        } else {
+          debugPrint('TTS文件已不存在: ${audioItem.filePath}');
         }
       }
 
       _audioItems.removeAt(index);
       notifyListeners();
+      debugPrint('音频已从库中移除: ${audioItem.title}');
     } catch (e) {
       debugPrint('移除音频失败: $e');
       rethrow;

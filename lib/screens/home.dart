@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/audio_player_service.dart';
 import '../services/audio_library_service.dart';
+import 'dart:io';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -218,6 +220,15 @@ class HomePageState extends State<HomePage>
                             child: const Text('去生成TTS音频'),
                           ),
                         ],
+                        if (_filterType == AudioType.local ||
+                            _filterType == null) ...[
+                          const SizedBox(height: 8),
+                          ElevatedButton.icon(
+                            onPressed: _pickAndAddAudioFiles,
+                            icon: const Icon(Icons.add),
+                            label: const Text('添加音频文件'),
+                          ),
+                        ],
                       ],
                     ),
                   );
@@ -235,6 +246,12 @@ class HomePageState extends State<HomePage>
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _pickAndAddAudioFiles,
+        backgroundColor: Theme.of(context).primaryColor,
+        child: const Icon(Icons.add, color: Colors.white),
+        tooltip: '添加音频文件',
       ),
     );
   }
@@ -393,17 +410,16 @@ class HomePageState extends State<HomePage>
                       ],
                     ),
                   ),
-                  if (audio.isTTS)
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete, size: 20, color: Colors.red),
-                          SizedBox(width: 8),
-                          Text('删除', style: TextStyle(color: Colors.red)),
-                        ],
-                      ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete, size: 20, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('删除', style: TextStyle(color: Colors.red)),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ],
@@ -424,6 +440,19 @@ class HomePageState extends State<HomePage>
       if (audioService.currentSong == audio.title && audioService.isPlaying) {
         await audioService.pause();
       } else {
+        // 检查音频文件是否存在
+        if (!File(audio.filePath).existsSync()) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('音频文件不存在: ${audio.title}'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
         // 播放音频
         await audioService.playFromFile(
           audio.filePath,
@@ -433,9 +462,9 @@ class HomePageState extends State<HomePage>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('播放失败: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('播放失败: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }
@@ -465,11 +494,28 @@ class HomePageState extends State<HomePage>
 
     if (result == true && mounted) {
       try {
+        final audioService = Provider.of<AudioPlayerService>(
+          context,
+          listen: false,
+        );
+
+        // 检查是否正在播放要删除的音频
+        bool wasPlayingDeletedAudio = false;
+        if (audioService.currentSong == audio.title) {
+          wasPlayingDeletedAudio = true;
+          // 完全清除播放器状态和音频数据
+          await audioService.clearAudioData();
+          debugPrint('已停止播放被删除的音频: ${audio.title}');
+        }
+
+        // 从库中删除音频
         await context.read<AudioLibraryService>().removeAudio(audio.id);
+
         if (mounted) {
+          String message = wasPlayingDeletedAudio ? '音频已删除并停止播放' : '音频已删除';
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('音频已删除')));
+          ).showSnackBar(SnackBar(content: Text(message)));
         }
       } catch (e) {
         if (mounted) {
@@ -559,5 +605,104 @@ class HomePageState extends State<HomePage>
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  /// 选择并添加音频文件
+  Future<void> _pickAndAddAudioFiles() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: true, // 允许选择多个文件
+      );
+
+      if (result != null && mounted) {
+        // 过滤出有效的文件路径
+        List<String> validFilePaths = [];
+        List<String> validFileNames = [];
+        List<String> invalidFiles = [];
+
+        for (PlatformFile file in result.files) {
+          if (file.path != null && File(file.path!).existsSync()) {
+            validFilePaths.add(file.path!);
+            validFileNames.add(file.name);
+          } else {
+            invalidFiles.add(file.name);
+          }
+        }
+
+        if (invalidFiles.isNotEmpty && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('以下文件无法访问: ${invalidFiles.join(', ')}'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
+        if (validFilePaths.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('没有有效的音频文件可以添加'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
+        // 显示加载对话框
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 16),
+                Text('正在添加 ${validFilePaths.length} 个音频文件...'),
+              ],
+            ),
+          ),
+        );
+
+        if (mounted) {
+          final audioLibraryService = context.read<AudioLibraryService>();
+
+          if (validFilePaths.length == 1) {
+            // 单个文件
+            await audioLibraryService.addLocalAudio(validFilePaths.first);
+          } else {
+            // 多个文件
+            await audioLibraryService.addLocalAudioBatch(validFilePaths);
+          }
+
+          if (mounted) {
+            Navigator.of(context).pop(); // 关闭加载对话框
+
+            String message = validFilePaths.length == 1
+                ? '音频文件 "${validFileNames.first}" 已添加'
+                : '成功添加 ${validFilePaths.length} 个音频文件';
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(message)),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        // 确保关闭加载对话框
+        try {
+          Navigator.of(context).pop();
+        } catch (_) {
+          // 忽略关闭对话框的错误
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('添加音频文件失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 }

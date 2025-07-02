@@ -160,6 +160,36 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  /// 完全清除音频数据和播放状态
+  Future<void> clearAudioData() async {
+    try {
+      await _audioPlayer.stop();
+      _playerState = PlayerState.stopped;
+      _currentPosition = Duration.zero;
+      _totalDuration = Duration.zero;
+      _audioData = null;
+      _currentLyricLine = null;
+      _currentWordIndex = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('清除音频数据失败: $e');
+    }
+  }
+
+  /// 检查当前音频文件是否仍然有效
+  bool isCurrentAudioValid() {
+    if (_audioData == null) return false;
+    return File(_audioData!.audioFilePath).existsSync();
+  }
+
+  /// 验证并处理无效的音频文件
+  Future<void> validateCurrentAudio() async {
+    if (_audioData != null && !isCurrentAudioValid()) {
+      debugPrint('当前音频文件已无效，清除播放器状态: ${_audioData!.audioFilePath}');
+      await clearAudioData();
+    }
+  }
+
   /// 跳转到指定位置
   Future<void> seekTo(Duration position) async {
     try {
@@ -284,6 +314,11 @@ class AudioPlayerService extends ChangeNotifier {
     String? artist,
   }) async {
     try {
+      // 检查文件是否存在
+      if (!File(filePath).existsSync()) {
+        throw Exception('音频文件不存在: $filePath');
+      }
+
       // 创建简单的音频数据
       final audioData = AudioPlayData(
         taskId: 'compat_${DateTime.now().millisecondsSinceEpoch}',
@@ -299,6 +334,9 @@ class AudioPlayerService extends ChangeNotifier {
       await play();
     } catch (e) {
       debugPrint('播放文件失败: $e');
+      // 如果播放失败，清除可能的错误状态
+      _playerState = PlayerState.error;
+      notifyListeners();
       rethrow;
     }
   }
