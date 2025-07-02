@@ -20,21 +20,22 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
   bool isLoading = false;
   bool isFirst = true;
   String sessionId = "";
-  
+
   // 消息列表存储对话历史
   final List<ChatMessage> messages = [];
-  
+
   @override
   void initState() {
     super.initState();
     chatService = AIChatService();
     chatSession = ChatSession();
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("从AI获取灵感"), 
+        title: Text("从AI获取灵感"),
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
@@ -147,12 +148,12 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
             itemBuilder: (context, index) {
               final message = messages[index];
               final isUser = message.isUser;
-              
+
               return Container(
                 padding: EdgeInsets.all(16),
                 child: Column(
-                  crossAxisAlignment: isUser 
-                      ? CrossAxisAlignment.end 
+                  crossAxisAlignment: isUser
+                      ? CrossAxisAlignment.end
                       : CrossAxisAlignment.start,
                   children: [
                     Row(
@@ -161,7 +162,7 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                           : MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (!isUser) ...[  
+                        if (!isUser) ...[
                           Icon(Icons.smart_toy, size: 22, color: Colors.blue),
                           SizedBox(width: 8),
                         ],
@@ -172,11 +173,11 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                             ),
                             padding: EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                               color: isUser 
-                                   ? Colors.blue.withValues(alpha: 0.1)
-                                   : Colors.grey.withValues(alpha: 0.1),
-                               borderRadius: BorderRadius.circular(10),
-                             ),
+                              color: isUser
+                                  ? Colors.blue.withValues(alpha: 0.1)
+                                  : Colors.grey.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             child: Text(
                               message.content,
                               style: TextStyle(fontSize: 16),
@@ -184,7 +185,7 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                             ),
                           ),
                         ),
-                        if (isUser) ...[  
+                        if (isUser) ...[
                           SizedBox(width: 8),
                           Icon(Icons.person, size: 22, color: Colors.green),
                         ],
@@ -197,7 +198,9 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                         padding: EdgeInsets.only(left: 30), // 与消息对齐
                         child: TextButton.icon(
                           onPressed: () async {
-                            final scaffoldMessenger = ScaffoldMessenger.of(context);
+                            final scaffoldMessenger = ScaffoldMessenger.of(
+                              context,
+                            );
                             await _selectionService.addText(message.content);
                             if (mounted) {
                               scaffoldMessenger.showSnackBar(
@@ -210,12 +213,12 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                             }
                           },
                           icon: Icon(Icons.add_circle_outline, size: 16),
-                          label: Text(
-                            '添加到待选区',
-                            style: TextStyle(fontSize: 12),
-                          ),
+                          label: Text('添加到待选区', style: TextStyle(fontSize: 12)),
                           style: TextButton.styleFrom(
-                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
@@ -256,57 +259,68 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                           final userMessage = textEditingController.text;
                           // 立即清空输入框
                           textEditingController.clear();
-                          
+
                           setState(() {
                             isLoading = true;
                           });
-                          
+
                           try {
-                              // 添加用户消息到列表
-                              setState(() {
-                                messages.add(ChatMessage(
+                            // 添加用户消息到列表
+                            setState(() {
+                              messages.add(
+                                ChatMessage(
                                   content: userMessage,
                                   isUser: true,
                                   timestamp: DateTime.now(),
-                                ));
-                              });
-                              
-                              ChatModel response;
-                              if (isFirst) {
-                                 response = await chatService.startNewChat(userMessage);
-                                 if (response.sessionId != null) {
-                                   sessionId = response.sessionId!;
-                                 }
-                                 isFirst = false;
-                              } else {
-                                // 将本地消息历史转换为Message对象列表
-                                List<Message> historyMessages = messages.map((chatMessage) => 
-                                  Message(
-                                    role: chatMessage.isUser ? 'user' : 'assistant',
-                                    content: chatMessage.content,
-                                  )
-                                ).toList();
-                                
-                                response = await chatService.continueChat(
-                                  message: userMessage,
-                                  sessionId: sessionId,
-                                  historyMessages: historyMessages,
-                                );
+                                ),
+                              );
+                            });
+
+                            ChatModel response;
+                            if (isFirst) {
+                              response = await chatService.startNewChat(
+                                userMessage,
+                              );
+                              if (response.sessionId != null) {
+                                sessionId = response.sessionId!;
                               }
-                              
-                              // 处理AI响应并添加到消息列表
-                              if (response.data != null && 
-                                  response.data!.messages.isNotEmpty) {
-                                final aiReply = response.data!.messages.last.content;
-                                setState(() {
-                                  messages.add(ChatMessage(
+                              isFirst = false;
+                            } else {
+                              // 将本地消息历史转换为Message对象列表
+                              List<Message> historyMessages = messages
+                                  .map(
+                                    (chatMessage) => Message(
+                                      role: chatMessage.isUser
+                                          ? 'user'
+                                          : 'assistant',
+                                      content: chatMessage.content,
+                                    ),
+                                  )
+                                  .toList();
+
+                              response = await chatService.continueChat(
+                                message: userMessage,
+                                sessionId: sessionId,
+                                historyMessages: historyMessages,
+                              );
+                            }
+
+                            // 处理AI响应并添加到消息列表
+                            if (response.data != null &&
+                                response.data!.messages.isNotEmpty) {
+                              final aiReply =
+                                  response.data!.messages.last.content;
+                              setState(() {
+                                messages.add(
+                                  ChatMessage(
                                     content: aiReply,
                                     isUser: false,
                                     timestamp: DateTime.now(),
-                                  ));
-                                });
-                                debugPrint('AI回复: $aiReply');
-                              }
+                                  ),
+                                );
+                              });
+                              debugPrint('AI回复: $aiReply');
+                            }
                           } catch (e) {
                             debugPrint('发送消息失败: $e');
                             // 发送失败时移除刚添加的用户消息
@@ -322,7 +336,9 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                           }
                         }
                       },
-                      icon: isLoading ? CircularProgressIndicator() : Icon(Icons.send),
+                      icon: isLoading
+                          ? CircularProgressIndicator()
+                          : Icon(Icons.send),
                     ),
                   ],
                 ),

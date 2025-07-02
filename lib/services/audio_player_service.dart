@@ -9,7 +9,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   final AudioPlayer _audioPlayer = AudioPlayer();
-  
+
   // 播放状态
   bool _isPlaying = false;
   bool _isPaused = false;
@@ -21,7 +21,7 @@ class AudioPlayerService extends ChangeNotifier {
   double _volume = 1.0;
   bool _isShuffle = false;
   bool _isRepeat = false;
-  
+
   // Getters
   bool get isPlaying => _isPlaying;
   bool get isPaused => _isPaused;
@@ -33,8 +33,8 @@ class AudioPlayerService extends ChangeNotifier {
   double get volume => _volume;
   bool get isShuffle => _isShuffle;
   bool get isRepeat => _isRepeat;
-  double get progress => _duration.inMilliseconds > 0 
-      ? _position.inMilliseconds / _duration.inMilliseconds 
+  double get progress => _duration.inMilliseconds > 0
+      ? _position.inMilliseconds / _duration.inMilliseconds
       : 0.0;
 
   void _initializePlayer() {
@@ -63,7 +63,12 @@ class AudioPlayerService extends ChangeNotifier {
       _isPaused = false;
       _position = Duration.zero;
       if (_isRepeat) {
-        play(_currentSong!, songName: _currentSong, artist: _currentArtist, album: _currentAlbum);
+        play(
+          _currentSong!,
+          songName: _currentSong,
+          artist: _currentArtist,
+          album: _currentAlbum,
+        );
       } else {
         _isPlaying = false;
         _isPaused = false;
@@ -73,7 +78,8 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   // 播放音频
-  Future<void> play(String audioPath, {
+  Future<void> play(
+    String audioPath, {
     String? songName,
     String? artist,
     String? album,
@@ -86,6 +92,25 @@ class AudioPlayerService extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Error playing audio: $e');
+    }
+  }
+
+  // 播放本地文件
+  Future<void> playFromFile(
+    String filePath, {
+    String? songTitle,
+    String? artist,
+    String? album,
+  }) async {
+    try {
+      await _audioPlayer.play(DeviceFileSource(filePath));
+      _currentSong = songTitle ?? 'Unknown Song';
+      _currentArtist = artist ?? 'Unknown Artist';
+      _currentAlbum = album ?? 'Unknown Album';
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error playing file: $e');
+      rethrow;
     }
   }
 
