@@ -28,6 +28,8 @@ class _AsrPageState extends State<AsrPage> {
   // WhisperX 选项
   String? _selectedLanguage;
   String? _selectedComputeType;
+  bool _enableWordTimestamps = true; // 是否生成单词级时间戳
+  bool _enableSpeakerDiarization = false; // 是否进行说话人识别
 
   // 任务状态
   String? _currentTaskId;
@@ -109,6 +111,13 @@ class _AsrPageState extends State<AsrPage> {
             _selectedModel,
             language: _selectedLanguage,
             computeType: _selectedComputeType,
+            enableWordTimestamps: _selectedModel == TranscriptionModel.whisperx
+                ? _enableWordTimestamps
+                : null,
+            enableSpeakerDiarization:
+                _selectedModel == TranscriptionModel.whisperx
+                ? _enableSpeakerDiarization
+                : null,
           );
 
       setState(() {
@@ -176,10 +185,15 @@ class _AsrPageState extends State<AsrPage> {
                 _availableFiles = availableFiles?.cast<String>() ?? [];
               });
 
-              // 如果至少有基础转录和单词时间戳，允许打开播放器
+              // 如果至少有基础转录，允许显示状态，如果有单词时间戳则允许打开播放器
+              final hasTranscription = _availableFiles.contains(
+                'transcription',
+              );
               final hasMinimumFiles =
-                  _availableFiles.contains('transcription') &&
-                  _availableFiles.contains('wordstamps');
+                  hasTranscription &&
+                  (_enableWordTimestamps
+                      ? _availableFiles.contains('wordstamps')
+                      : true);
 
               if (hasMinimumFiles &&
                   _taskStatus != TranscriptionStatus.completed) {
@@ -438,7 +452,7 @@ class _AsrPageState extends State<AsrPage> {
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
                         child: Text(
-                          '支持格式: WAV, MP3, FLAC, M4A, OGG, AAC',
+                          '支持格式: WAV',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
@@ -585,6 +599,46 @@ class _AsrPageState extends State<AsrPage> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 16),
+
+                      // WhisperX 处理选项
+                      const Text(
+                        '处理选项:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+
+                      CheckboxListTile(
+                        title: const Text('生成单词级时间戳'),
+                        subtitle: const Text('用于音频播放时的歌词同步'),
+                        value: _enableWordTimestamps,
+                        onChanged: _isProcessing
+                            ? null
+                            : (bool? value) {
+                                setState(() {
+                                  _enableWordTimestamps = value ?? true;
+                                  // 如果关闭单词级时间戳，也关闭说话人识别（因为说话人识别依赖于单词级对齐）
+                                  if (!_enableWordTimestamps) {
+                                    _enableSpeakerDiarization = false;
+                                  }
+                                });
+                              },
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+
+                      CheckboxListTile(
+                        title: const Text('进行说话人识别'),
+                        subtitle: const Text('识别音频中的不同说话人，需要更长处理时间'),
+                        value: _enableSpeakerDiarization,
+                        onChanged: (_isProcessing || !_enableWordTimestamps)
+                            ? null
+                            : (bool? value) {
+                                setState(() {
+                                  _enableSpeakerDiarization = value ?? false;
+                                });
+                              },
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
                     ],
                   ],
                 ),
@@ -673,6 +727,27 @@ class _AsrPageState extends State<AsrPage> {
                         '任务ID: $_currentTaskId',
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
+
+                      // 显示选择的处理选项（仅WhisperX）
+                      if (_selectedModel == TranscriptionModel.whisperx) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '处理选项:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '• 单词级时间戳: ${_enableWordTimestamps ? "启用" : "禁用"}\n'
+                          '• 说话人识别: ${_enableSpeakerDiarization ? "启用" : "禁用"}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
 
                       // WhisperX可用文件显示
                       if (_selectedModel == TranscriptionModel.whisperx &&
@@ -987,16 +1062,23 @@ class _AsrPageState extends State<AsrPage> {
     }
   }
 
-  /// 检查是否可以打开播放器（前两个文件已完成）
+  /// 检查是否可以打开播放器（基于用户选择的选项）
   bool _canOpenPlayer() {
     if (_currentTaskId == null || _taskStatus == TranscriptionStatus.failed) {
       return false;
     }
 
-    // 对于WhisperX，检查是否至少有转录和单词级时间戳可用
+    // 对于WhisperX，根据用户选择的选项检查所需文件
     if (_selectedModel == TranscriptionModel.whisperx) {
-      return _availableFiles.contains('transcription') &&
-          _availableFiles.contains('wordstamps');
+      bool hasTranscription = _availableFiles.contains('transcription');
+
+      // 如果用户启用了单词级时间戳，需要等待wordstamps文件
+      if (_enableWordTimestamps) {
+        return hasTranscription && _availableFiles.contains('wordstamps');
+      }
+
+      // 如果用户没有启用单词级时间戳，只需要基础转录即可
+      return hasTranscription;
     }
 
     // 对于其他模型，只有完成状态才能打开

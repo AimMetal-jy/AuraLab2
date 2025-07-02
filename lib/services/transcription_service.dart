@@ -75,10 +75,14 @@ class TranscriptionService {
   /// [audioFile] 音频文件
   /// [language] 语言代码（可选）
   /// [computeType] 计算类型（可选）
+  /// [enableWordTimestamps] 是否生成单词级时间戳（可选）
+  /// [enableSpeakerDiarization] 是否进行说话人识别（可选）
   Future<TranscriptionSubmitResponse> submitWhisperXTask(
     File audioFile, {
     String? language,
     String? computeType,
+    bool? enableWordTimestamps,
+    bool? enableSpeakerDiarization,
   }) async {
     try {
       debugPrint('提交WhisperX转录任务: ${audioFile.path}');
@@ -91,6 +95,10 @@ class TranscriptionService {
         ),
         if (language != null) 'language': language,
         if (computeType != null) 'compute_type': computeType,
+        if (enableWordTimestamps != null)
+          'enable_word_timestamps': enableWordTimestamps.toString(),
+        if (enableSpeakerDiarization != null)
+          'enable_speaker_diarization': enableSpeakerDiarization.toString(),
       });
 
       // 发送POST请求到统一接口
@@ -316,11 +324,15 @@ class TranscriptionService {
   /// [model] 转录模型
   /// [language] 语言代码（仅WhisperX使用）
   /// [computeType] 计算类型（仅WhisperX使用）
+  /// [enableWordTimestamps] 是否生成单词级时间戳（仅WhisperX使用）
+  /// [enableSpeakerDiarization] 是否进行说话人识别（仅WhisperX使用）
   Future<TranscriptionSubmitResponse> submitTranscriptionTask(
     File audioFile,
     TranscriptionModel model, {
     String? language,
     String? computeType,
+    bool? enableWordTimestamps,
+    bool? enableSpeakerDiarization,
   }) async {
     switch (model) {
       case TranscriptionModel.bluelm:
@@ -330,6 +342,8 @@ class TranscriptionService {
           audioFile,
           language: language,
           computeType: computeType,
+          enableWordTimestamps: enableWordTimestamps,
+          enableSpeakerDiarization: enableSpeakerDiarization,
         );
     }
   }
@@ -449,8 +463,11 @@ class TranscriptionService {
       case 'queued':
         return 'pending';
       case 'processing':
+      case 'transcription_processing':
       case 'transcription_completed':
+      case 'alignment_processing':
       case 'alignment_completed':
+      case 'diarization_processing':
         return 'processing';
       case 'completed':
         return 'completed';
@@ -469,10 +486,16 @@ class TranscriptionService {
         return '任务已排队，等待处理';
       case 'processing':
         return '正在处理音频文件...';
+      case 'transcription_processing':
+        return '正在进行基础转录...';
       case 'transcription_completed':
-        return '基础转录已完成，正在进行单词级对齐...';
+        return '基础转录已完成';
+      case 'alignment_processing':
+        return '正在进行单词级对齐...';
       case 'alignment_completed':
-        return '单词级对齐已完成，正在进行说话人分离...';
+        return '单词级对齐已完成';
+      case 'diarization_processing':
+        return '正在进行说话人分离...';
       case 'completed':
         return '所有处理步骤已完成';
       case 'failed':
