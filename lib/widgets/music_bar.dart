@@ -217,7 +217,7 @@ class _ClickableProgressBarState extends State<ClickableProgressBar> {
         });
       },
       child: Container(
-        height: widget.height + 8, // 适度增加触摸区域
+        height: widget.height + 16, // 增加触摸区域
         alignment: Alignment.topCenter, // 顶部对齐
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -250,27 +250,30 @@ class _ClickableProgressBarState extends State<ClickableProgressBar> {
                       ),
                     ),
                   ),
-                  // 拖拽指示器
-                  if (_isDragging)
-                    Positioned(
-                      left: (displayProgress.clamp(0.0, 1.0) * constraints.maxWidth - 6).clamp(0.0, constraints.maxWidth - 12),
-                      top: (widget.height - 12) / 2,
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: widget.valueColor ?? Theme.of(context).primaryColor,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color.fromRGBO(0, 0, 0, 0.2),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  // 拖拽指示器 - 已禁用
+                  // Positioned(
+                  //   left: (displayProgress.clamp(0.0, 1.0) * constraints.maxWidth - 12).clamp(0.0, constraints.maxWidth - 24),
+                  //   top: (widget.height - 24) / 2,
+                  //   child: Container(
+                  //     width: 24,
+                  //     height: 24,
+                  //     decoration: BoxDecoration(
+                  //       color: widget.valueColor ?? Theme.of(context).primaryColor,
+                  //       shape: BoxShape.circle,
+                  //       border: Border.all(
+                  //         color: Colors.white,
+                  //         width: 3,
+                  //       ),
+                  //       boxShadow: [
+                  //         BoxShadow(
+                  //           color: const Color.fromRGBO(0, 0, 0, 0.4),
+                  //           blurRadius: 8,
+                  //           offset: const Offset(0, 3),
+                  //         ),
+                  //       ],
+                  //     ),
+                  //   ),
+                  // ),
                 ],
               ),
             );

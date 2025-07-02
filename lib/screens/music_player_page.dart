@@ -4,8 +4,16 @@ import 'package:go_router/go_router.dart';
 import '../services/audio_player_service.dart';
 import '../widgets/music_bar.dart';
 
-class MusicPlayerPage extends StatelessWidget {
+class MusicPlayerPage extends StatefulWidget {
   const MusicPlayerPage({super.key});
+
+  @override
+  State<MusicPlayerPage> createState() => _MusicPlayerPageState();
+}
+
+class _MusicPlayerPageState extends State<MusicPlayerPage> {
+  final PageController _pageController = PageController();
+  int _currentPageIndex = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -34,195 +42,316 @@ class MusicPlayerPage extends StatelessWidget {
         builder: (context, audioService, child) {
           return Column(
             children: [
+              // 页面指示器
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildPageIndicator(0, '播放'),
+                    const SizedBox(width: 20),
+                    _buildPageIndicator(1, '歌词'),
+                  ],
+                ),
+              ),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(32.0),
-                  child: Column(
-                    children: [
-                      const Spacer(),
-                      // 专辑封面
-                      Container(
-                        width: 280,
-                        height: 280,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[800],
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color.fromRGBO(0, 0, 0, 0.3),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.music_note,
-                          color: Colors.grey[400],
-                          size: 80,
-                        ),
-                      ),
-                      const SizedBox(height: 40),
-                      // 歌曲信息
-                      Text(
-                        audioService.currentSong ?? 'Unknown Song',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        audioService.currentArtist ?? 'Unknown Artist',
-                        style: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: 16,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const Spacer(),
-                      // 进度条
-                      Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                            child: ClickableProgressBar(
-                              progress: audioService.progress,
-                              height: 6,
-                              backgroundColor: Colors.grey[800],
-                              valueColor: Colors.white,
-                              onSeek: (value) {
-                                final newPosition = Duration(
-                                  milliseconds: (audioService.duration.inMilliseconds * value).round(),
-                                );
-                                audioService.seek(newPosition);
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  _formatDuration(audioService.position),
-                                  style: TextStyle(
-                                    color: Colors.grey[400],
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                Text(
-                                  _formatDuration(audioService.duration),
-                                  style: TextStyle(
-                                    color: Colors.grey[400],
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 40),
-                      // 控制按钮
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              audioService.toggleShuffle();
-                            },
-                            icon: Icon(
-                              Icons.shuffle,
-                              color: audioService.isShuffle ? Theme.of(context).primaryColor : Colors.white,
-                              size: 28,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () {},
-                            icon: const Icon(
-                              Icons.skip_previous,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                          ),
-                          Container(
-                            width: 64,
-                            height: 64,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              onPressed: () {
-                                audioService.togglePlayPause();
-                              },
-                              icon: Icon(
-                                audioService.isPlaying
-                                    ? Icons.pause
-                                    : Icons.play_arrow,
-                                color: Colors.black,
-                                size: 32,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () {},
-                            icon: const Icon(
-                              Icons.skip_next,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () {
-                              audioService.toggleRepeat();
-                            },
-                            icon: Icon(
-                              Icons.repeat,
-                              color: audioService.isRepeat ? Theme.of(context).primaryColor : Colors.white,
-                              size: 28,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      // 音量控制
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.volume_down,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          Expanded(
-                            child: Slider(
-                              value: audioService.volume,
-                              onChanged: (value) {
-                                audioService.setVolume(value);
-                              },
-                              activeColor: Colors.white,
-                              inactiveColor: Colors.grey[800],
-                            ),
-                          ),
-                          const Icon(
-                            Icons.volume_up,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentPageIndex = index;
+                    });
+                  },
+                  children: [
+                    // 播放器页面
+                    _buildPlayerPage(audioService),
+                    // 歌词页面
+                    _buildLyricsPage(audioService),
+                  ],
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildPageIndicator(int index, String title) {
+    final isActive = _currentPageIndex == index;
+    return GestureDetector(
+      onTap: () {
+        _pageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white.withValues(alpha: 0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isActive ? Colors.white : Colors.grey[400],
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlayerPage(AudioPlayerService audioService) {
+    return Padding(
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        children: [
+           const Spacer(),
+           // 专辑封面
+           Container(
+             width: 280,
+             height: 280,
+             decoration: BoxDecoration(
+               color: Colors.grey[800],
+               borderRadius: BorderRadius.circular(12),
+               boxShadow: [
+                 BoxShadow(
+                   color: const Color.fromRGBO(0, 0, 0, 0.3),
+                   blurRadius: 20,
+                   offset: const Offset(0, 10),
+                 ),
+               ],
+             ),
+             child: Icon(
+               Icons.music_note,
+               color: Colors.grey[400],
+               size: 80,
+             ),
+           ),
+           const SizedBox(height: 40),
+           // 歌曲信息
+           Text(
+             audioService.currentSong ?? 'Unknown Song',
+             style: const TextStyle(
+               color: Colors.white,
+               fontSize: 24,
+               fontWeight: FontWeight.bold,
+             ),
+             textAlign: TextAlign.center,
+             maxLines: 2,
+             overflow: TextOverflow.ellipsis,
+           ),
+           const SizedBox(height: 8),
+           Text(
+             audioService.currentArtist ?? 'Unknown Artist',
+             style: TextStyle(
+               color: Colors.grey[400],
+               fontSize: 16,
+             ),
+             textAlign: TextAlign.center,
+           ),
+           const Spacer(),
+           // 进度条
+           Column(
+             children: [
+               Padding(
+                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                 child: ClickableProgressBar(
+                   progress: audioService.progress,
+                   height: 6,
+                   backgroundColor: Colors.grey[800],
+                   valueColor: Colors.white,
+                   onSeek: (value) {
+                     final newPosition = Duration(
+                       milliseconds: (audioService.duration.inMilliseconds * value).round(),
+                     );
+                     audioService.seek(newPosition);
+                   },
+                 ),
+               ),
+               const SizedBox(height: 8),
+               Padding(
+                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                 child: Row(
+                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                   children: [
+                     Text(
+                       _formatDuration(audioService.position),
+                       style: TextStyle(
+                         color: Colors.grey[400],
+                         fontSize: 12,
+                       ),
+                     ),
+                     Text(
+                       _formatDuration(audioService.duration),
+                       style: TextStyle(
+                         color: Colors.grey[400],
+                         fontSize: 12,
+                       ),
+                     ),
+                   ],
+                 ),
+               ),
+             ],
+           ),
+           const SizedBox(height: 40),
+           // 控制按钮
+           Row(
+             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+             children: [
+               IconButton(
+                 onPressed: () {
+                   audioService.toggleShuffle();
+                 },
+                 icon: Icon(
+                   Icons.shuffle,
+                   color: audioService.isShuffle ? Theme.of(context).primaryColor : Colors.white,
+                   size: 28,
+                 ),
+               ),
+               IconButton(
+                 onPressed: () {},
+                 icon: const Icon(
+                   Icons.skip_previous,
+                   color: Colors.white,
+                   size: 36,
+                 ),
+               ),
+               Container(
+                 width: 64,
+                 height: 64,
+                 decoration: const BoxDecoration(
+                   color: Colors.white,
+                   shape: BoxShape.circle,
+                 ),
+                 child: IconButton(
+                   onPressed: () {
+                     audioService.togglePlayPause();
+                   },
+                   icon: Icon(
+                     audioService.isPlaying
+                         ? Icons.pause
+                         : Icons.play_arrow,
+                     color: Colors.black,
+                     size: 32,
+                   ),
+                 ),
+               ),
+               IconButton(
+                 onPressed: () {},
+                 icon: const Icon(
+                   Icons.skip_next,
+                   color: Colors.white,
+                   size: 36,
+                 ),
+               ),
+               IconButton(
+                 onPressed: () {
+                   audioService.toggleRepeat();
+                 },
+                 icon: Icon(
+                   Icons.repeat,
+                   color: audioService.isRepeat ? Theme.of(context).primaryColor : Colors.white,
+                   size: 28,
+                 ),
+               ),
+             ],
+           ),
+           const SizedBox(height: 20),
+           // 音量控制
+           Row(
+             children: [
+               const Icon(
+                 Icons.volume_down,
+                 color: Colors.white,
+                 size: 20,
+               ),
+               Expanded(
+                 child: Slider(
+                   value: audioService.volume,
+                   onChanged: (value) {
+                     audioService.setVolume(value);
+                   },
+                   activeColor: Colors.white,
+                   inactiveColor: Colors.grey[800],
+                 ),
+               ),
+               const Icon(
+                 Icons.volume_up,
+                 color: Colors.white,
+                 size: 20,
+               ),
+             ],
+           ),
+         ],
+       ),
+     );
+   }
+
+  Widget _buildLyricsPage(AudioPlayerService audioService) {
+    return Padding(
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        children: [
+          const Spacer(),
+          // 歌词显示区域
+          Expanded(
+            flex: 3,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24.0),
+              decoration: BoxDecoration(
+                color: Colors.grey[900]?.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.grey[700]!,
+                  width: 1,
+                ),
+              ),
+              child: _buildLyricsContent(audioService),
+            ),
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLyricsContent(AudioPlayerService audioService) {
+    // 这里可以根据实际需求从audioService或其他地方获取歌词
+    // 目前显示无歌词提示
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.music_note_outlined,
+            color: Colors.grey,
+            size: 64,
+          ),
+          SizedBox(height: 16),
+          Text(
+            '暂无歌词文件',
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '享受纯音乐的美妙时光',
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 14,
+            ),
+          ),
+        ],
       ),
     );
   }
