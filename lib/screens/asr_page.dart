@@ -1,4 +1,12 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import '../services/transcription_service.dart';
+import '../services/audio_player_service.dart';
+import '../models/transcription_model.dart';
+
+import '../screens/audio_lyrics_player_page.dart';
 
 class AsrPage extends StatefulWidget {
   const AsrPage({super.key});
@@ -8,13 +16,1216 @@ class AsrPage extends StatefulWidget {
 }
 
 class _AsrPageState extends State<AsrPage> {
+  final TranscriptionService _transcriptionService = TranscriptionService();
+
+  // 选择的音频文件
+  File? _selectedAudioFile;
+  String? _selectedFileName;
+
+  // 转录模型选择
+  TranscriptionModel _selectedModel = TranscriptionModel.bluelm;
+
+  // WhisperX 选项
+  String? _selectedLanguage;
+  String? _selectedComputeType;
+
+  // 任务状态
+  String? _currentTaskId;
+  TranscriptionStatus? _taskStatus;
+  String? _statusMessage;
+  bool _isProcessing = false;
+
+  // WhisperX专用状态
+  List<String> _availableFiles = [];
+  Map<String, dynamic>? _whisperxDetailedStatus;
+
+  // 转录结果
+  String? _transcriptionResult;
+
+  // 任务历史
+  List<TranscriptionStatusResponse> _taskHistory = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTaskHistory();
+  }
+
+  @override
+  void dispose() {
+    _transcriptionService.dispose();
+    super.dispose();
+  }
+
+  /// 选择音频文件
+  Future<void> _pickAudioFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['wav', 'mp3', 'flac', 'm4a', 'ogg', 'aac'],
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        setState(() {
+          _selectedAudioFile = File(result.files.single.path!);
+          _selectedFileName = result.files.single.name;
+          // 清除之前的结果
+          _transcriptionResult = null;
+          _currentTaskId = null;
+          _taskStatus = null;
+          _statusMessage = null;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('已选择文件: $_selectedFileName')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('选择文件失败: $e')));
+      }
+    }
+  }
+
+  /// 提交转录任务
+  Future<void> _submitTranscriptionTask() async {
+    if (_selectedAudioFile == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先选择音频文件')));
+      return;
+    }
+
+    setState(() {
+      _isProcessing = true;
+      _transcriptionResult = null;
+      _taskStatus = null;
+      _statusMessage = '正在提交任务...';
+    });
+
+    try {
+      TranscriptionSubmitResponse response = await _transcriptionService
+          .submitTranscriptionTask(
+            _selectedAudioFile!,
+            _selectedModel,
+            language: _selectedLanguage,
+            computeType: _selectedComputeType,
+          );
+
+      setState(() {
+        _currentTaskId = response.taskId;
+        _taskStatus = TranscriptionStatus.processing;
+        _statusMessage = response.message ?? '任务已提交，正在处理中...';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('任务提交成功！任务ID: ${response.taskId}')),
+        );
+      }
+
+      // 开始轮询任务状态
+      _pollTaskStatus();
+    } catch (e) {
+      setState(() {
+        _isProcessing = false;
+        _statusMessage = '提交任务失败: $e';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('提交任务失败: $e')));
+      }
+    }
+  }
+
+  /// 轮询任务状态
+  Future<void> _pollTaskStatus() async {
+    if (_currentTaskId == null) return;
+
+    while (_taskStatus == TranscriptionStatus.processing ||
+        _taskStatus == TranscriptionStatus.pending) {
+      await Future.delayed(const Duration(seconds: 5));
+
+      try {
+        TranscriptionStatusResponse statusResponse = await _transcriptionService
+            .getTaskStatus(_currentTaskId!, _selectedModel);
+
+        setState(() {
+          _taskStatus = statusResponse.status;
+          _statusMessage =
+              statusResponse.message ?? _getStatusText(statusResponse.status);
+        });
+
+        // 对于WhisperX，获取详细状态信息
+        if (_selectedModel == TranscriptionModel.whisperx) {
+          try {
+            _whisperxDetailedStatus = await _transcriptionService
+                .getWhisperXDetailedStatus(_currentTaskId!);
+
+            if (_whisperxDetailedStatus != null) {
+              final availableFiles =
+                  _whisperxDetailedStatus!['available_files'] as List?;
+              setState(() {
+                _availableFiles = availableFiles?.cast<String>() ?? [];
+              });
+
+              // 如果至少有基础转录和单词时间戳，允许打开播放器
+              final hasMinimumFiles =
+                  _availableFiles.contains('transcription') &&
+                  _availableFiles.contains('wordstamps');
+
+              if (hasMinimumFiles &&
+                  _taskStatus != TranscriptionStatus.completed) {
+                setState(() {
+                  _statusMessage =
+                      '${_statusMessage ?? ''} • 可用文件: ${_availableFiles.join(', ')}';
+                });
+              }
+            }
+          } catch (e) {
+            debugPrint('获取WhisperX详细状态失败: $e');
+          }
+        }
+
+        if (statusResponse.status == TranscriptionStatus.completed) {
+          await _downloadTranscriptionResult();
+          break;
+        } else if (statusResponse.status == TranscriptionStatus.failed) {
+          break;
+        }
+      } catch (e) {
+        setState(() {
+          _statusMessage = '查询任务状态失败: $e';
+        });
+        break;
+      }
+    }
+
+    setState(() {
+      _isProcessing = false;
+    });
+
+    // 更新任务历史
+    _loadTaskHistory();
+  }
+
+  /// 下载转录结果
+  Future<void> _downloadTranscriptionResult() async {
+    if (_currentTaskId == null) return;
+
+    try {
+      String result = await _transcriptionService.downloadTranscriptionResult(
+        _currentTaskId!,
+        _selectedModel,
+      );
+
+      setState(() {
+        _transcriptionResult = result;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('转录完成！')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('下载结果失败: $e')));
+      }
+    }
+  }
+
+  /// 加载任务历史（仅蓝心大模型支持）
+  Future<void> _loadTaskHistory() async {
+    if (_selectedModel != TranscriptionModel.bluelm) return;
+
+    try {
+      TranscriptionTaskListResponse response = await _transcriptionService
+          .getBlueLMTaskList();
+      setState(() {
+        _taskHistory = response.tasks;
+      });
+    } catch (e) {
+      debugPrint('加载任务历史失败: $e');
+    }
+  }
+
+  /// 刷新当前任务状态
+  Future<void> _refreshTaskStatus() async {
+    if (_currentTaskId == null) return;
+
+    try {
+      TranscriptionStatusResponse statusResponse = await _transcriptionService
+          .getTaskStatus(_currentTaskId!, _selectedModel);
+
+      setState(() {
+        _taskStatus = statusResponse.status;
+        _statusMessage =
+            statusResponse.message ?? _getStatusText(statusResponse.status);
+      });
+
+      // 对于WhisperX，获取详细状态信息
+      if (_selectedModel == TranscriptionModel.whisperx) {
+        try {
+          _whisperxDetailedStatus = await _transcriptionService
+              .getWhisperXDetailedStatus(_currentTaskId!);
+
+          if (_whisperxDetailedStatus != null) {
+            final availableFiles =
+                _whisperxDetailedStatus!['available_files'] as List?;
+            setState(() {
+              _availableFiles = availableFiles?.cast<String>() ?? [];
+            });
+
+            // 更新状态消息显示可用文件
+            if (_availableFiles.isNotEmpty) {
+              setState(() {
+                _statusMessage =
+                    '${_getStatusText(_taskStatus!)} • 可用文件: ${_availableFiles.join(', ')}';
+              });
+            }
+          }
+        } catch (e) {
+          debugPrint('获取WhisperX详细状态失败: $e');
+        }
+      }
+
+      // 如果任务已完成且还没有下载结果，则自动下载
+      if (statusResponse.status == TranscriptionStatus.completed &&
+          _transcriptionResult == null) {
+        await _downloadTranscriptionResult();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('状态已刷新')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('刷新状态失败: $e')));
+      }
+    }
+  }
+
+  /// 获取状态文本
+  String _getStatusText(TranscriptionStatus status) {
+    switch (status) {
+      case TranscriptionStatus.pending:
+        return '等待处理';
+      case TranscriptionStatus.processing:
+        return '正在处理中...';
+      case TranscriptionStatus.completed:
+        return '处理完成';
+      case TranscriptionStatus.failed:
+        return '处理失败';
+    }
+  }
+
+  /// 获取状态颜色
+  Color _getStatusColor(TranscriptionStatus status) {
+    switch (status) {
+      case TranscriptionStatus.pending:
+        return Colors.orange;
+      case TranscriptionStatus.processing:
+        return Colors.blue;
+      case TranscriptionStatus.completed:
+        return Colors.green;
+      case TranscriptionStatus.failed:
+        return Colors.red;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("这是文枢工坊的ASR界面"),
+        title: const Text("音频转字"),
         automaticallyImplyLeading: true,
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 文件选择区域
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '1. 选择音频文件',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _selectedFileName ?? '未选择文件',
+                            style: TextStyle(
+                              color: _selectedFileName != null
+                                  ? Colors.black
+                                  : Colors.grey,
+                            ),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _isProcessing ? null : _pickAudioFile,
+                          icon: const Icon(Icons.audio_file),
+                          label: const Text('选择文件'),
+                        ),
+                      ],
+                    ),
+                    if (_selectedFileName != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          '支持格式: WAV, MP3, FLAC, M4A, OGG, AAC',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // 模型选择区域
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '2. 选择转录模型',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: RadioListTile<TranscriptionModel>(
+                            title: const Text('蓝心大模型'),
+                            subtitle: const Text('高精度中文转录'),
+                            value: TranscriptionModel.bluelm,
+                            groupValue: _selectedModel,
+                            onChanged: _isProcessing
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _selectedModel = value!;
+                                    });
+                                    _loadTaskHistory();
+                                  },
+                          ),
+                        ),
+                        Expanded(
+                          child: RadioListTile<TranscriptionModel>(
+                            title: const Text('WhisperX'),
+                            subtitle: const Text('多语言支持'),
+                            value: TranscriptionModel.whisperx,
+                            groupValue: _selectedModel,
+                            onChanged: _isProcessing
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _selectedModel = value!;
+                                    });
+                                  },
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // WhisperX 选项
+                    if (_selectedModel == TranscriptionModel.whisperx) ...[
+                      const Divider(),
+                      const Text(
+                        'WhisperX 选项:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(
+                                labelText: '语言',
+                                border: OutlineInputBorder(),
+                              ),
+                              value: _selectedLanguage,
+                              onChanged: _isProcessing
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        _selectedLanguage = value;
+                                      });
+                                    },
+                              items: const [
+                                DropdownMenuItem(
+                                  value: null,
+                                  child: Text('自动检测'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'zh',
+                                  child: Text('中文'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'en',
+                                  child: Text('英文'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'ja',
+                                  child: Text('日文'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'ko',
+                                  child: Text('韩文'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(
+                                labelText: '计算类型',
+                                border: OutlineInputBorder(),
+                              ),
+                              value: _selectedComputeType,
+                              onChanged: _isProcessing
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        _selectedComputeType = value;
+                                      });
+                                    },
+                              items: const [
+                                DropdownMenuItem(
+                                  value: null,
+                                  child: Text('默认'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'float16',
+                                  child: Text('float16'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'int8',
+                                  child: Text('int8'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // 提交按钮
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: (_selectedAudioFile != null && !_isProcessing)
+                    ? _submitTranscriptionTask
+                    : null,
+                icon: _isProcessing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
+                label: Text(_isProcessing ? '处理中...' : '开始转录'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // 状态显示区域
+            if (_currentTaskId != null) ...[
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            '转录状态',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: _refreshTaskStatus,
+                            icon: const Icon(Icons.refresh),
+                            tooltip: '刷新状态',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Icon(
+                            _taskStatus == TranscriptionStatus.completed
+                                ? Icons.check_circle
+                                : _taskStatus == TranscriptionStatus.failed
+                                ? Icons.error
+                                : Icons.hourglass_empty,
+                            color: _taskStatus != null
+                                ? _getStatusColor(_taskStatus!)
+                                : Colors.grey,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _statusMessage ?? '未知状态',
+                              style: TextStyle(
+                                color: _taskStatus != null
+                                    ? _getStatusColor(_taskStatus!)
+                                    : Colors.grey,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '任务ID: $_currentTaskId',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+
+                      // WhisperX可用文件显示
+                      if (_selectedModel == TranscriptionModel.whisperx &&
+                          _availableFiles.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text(
+                          '可用文件:',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: _availableFiles.map((file) {
+                            IconData icon;
+                            String label;
+                            Color color;
+
+                            switch (file) {
+                              case 'transcription':
+                                icon = Icons.text_fields;
+                                label = '转录文本';
+                                color = Colors.blue;
+                                break;
+                              case 'wordstamps':
+                                icon = Icons.access_time;
+                                label = '单词时间戳';
+                                color = Colors.green;
+                                break;
+                              case 'speaker_segments':
+                              case 'diarization':
+                                icon = Icons.people;
+                                label = '说话人分离';
+                                color = Colors.orange;
+                                break;
+                              default:
+                                icon = Icons.file_present;
+                                label = file;
+                                color = Colors.grey;
+                            }
+
+                            return Chip(
+                              avatar: Icon(icon, size: 16, color: color),
+                              label: Text(
+                                label,
+                                style: TextStyle(fontSize: 12, color: color),
+                              ),
+                              backgroundColor: color.withValues(alpha: 0.1),
+                              side: BorderSide(
+                                color: color.withValues(alpha: 0.3),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+
+                        // 批量下载按钮
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _downloadAllAvailableFiles,
+                                icon: const Icon(Icons.download),
+                                label: const Text('下载所有文件'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              onPressed: _viewWhisperXResults,
+                              icon: const Icon(Icons.visibility),
+                              label: const Text('查看结果'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+
+                      // WhisperX播放器按钮
+                      if (_selectedModel == TranscriptionModel.whisperx &&
+                          (_taskStatus == TranscriptionStatus.completed ||
+                              _canOpenPlayer())) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _openAudioPlayer,
+                            icon: const Icon(Icons.music_note),
+                            label: Text(
+                              _taskStatus == TranscriptionStatus.completed
+                                  ? '打开音频播放器'
+                                  : '打开音频播放器（预览）',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // 转录结果显示区域
+            if (_transcriptionResult != null) ...[
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            '转录结果',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () {
+                              // 复制到剪贴板
+                              // Clipboard.setData(ClipboardData(text: _transcriptionResult!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('结果已复制到剪贴板')),
+                              );
+                            },
+                            icon: const Icon(Icons.copy),
+                            tooltip: '复制结果',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Text(
+                          _formatTranscriptionResult(_transcriptionResult!),
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // 任务历史区域（仅蓝心大模型）
+            if (_selectedModel == TranscriptionModel.bluelm &&
+                _taskHistory.isNotEmpty) ...[
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            '转录历史',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: () async {
+                              final scaffoldMessenger = ScaffoldMessenger.of(
+                                context,
+                              );
+                              await _loadTaskHistory();
+                              if (mounted) {
+                                scaffoldMessenger.showSnackBar(
+                                  const SnackBar(content: Text('任务历史已刷新')),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('刷新'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _taskHistory.length > 5
+                            ? 5
+                            : _taskHistory.length, // 最多显示5个
+                        separatorBuilder: (context, index) => const Divider(),
+                        itemBuilder: (context, index) {
+                          final task = _taskHistory[index];
+                          return ListTile(
+                            leading: Icon(
+                              task.status == TranscriptionStatus.completed
+                                  ? Icons.check_circle
+                                  : task.status == TranscriptionStatus.failed
+                                  ? Icons.error
+                                  : Icons.hourglass_empty,
+                              color: _getStatusColor(task.status),
+                            ),
+                            title: Text(task.filename ?? '未知文件'),
+                            subtitle: Text(
+                              '${_getStatusText(task.status)} • ${task.createdAt ?? ''}',
+                            ),
+                            trailing:
+                                task.status == TranscriptionStatus.completed
+                                ? IconButton(
+                                    onPressed: () async {
+                                      final scaffoldMessenger =
+                                          ScaffoldMessenger.of(context);
+                                      final currentContext = context;
+                                      try {
+                                        String result =
+                                            await _transcriptionService
+                                                .downloadBlueLMResult(
+                                                  task.taskId,
+                                                );
+                                        if (mounted && currentContext.mounted) {
+                                          showDialog(
+                                            context: currentContext,
+                                            builder: (dialogContext) =>
+                                                AlertDialog(
+                                                  title: const Text('转录结果'),
+                                                  content: SingleChildScrollView(
+                                                    child: Text(
+                                                      _formatTranscriptionResult(
+                                                        result,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                            dialogContext,
+                                                          ),
+                                                      child: const Text('关闭'),
+                                                    ),
+                                                  ],
+                                                ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          scaffoldMessenger.showSnackBar(
+                                            SnackBar(
+                                              content: Text('下载结果失败: $e'),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    icon: const Icon(Icons.download),
+                                    tooltip: '查看结果',
+                                  )
+                                : null,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
+  }
+
+  /// 格式化转录结果显示
+  String _formatTranscriptionResult(String result) {
+    try {
+      // 尝试解析JSON
+      final jsonData = jsonDecode(result);
+      if (jsonData is Map<String, dynamic>) {
+        // 如果是JSON格式，尝试提取文本内容
+        if (jsonData.containsKey('text')) {
+          return jsonData['text'].toString();
+        } else if (jsonData.containsKey('segments')) {
+          // WhisperX格式
+          final segments = jsonData['segments'] as List?;
+          if (segments != null) {
+            return segments.map((seg) => seg['text'] ?? '').join(' ');
+          }
+        }
+      }
+      return jsonEncode(jsonData); // 格式化显示JSON
+    } catch (e) {
+      // 如果不是JSON，直接返回原文本
+      return result;
+    }
+  }
+
+  /// 检查是否可以打开播放器（前两个文件已完成）
+  bool _canOpenPlayer() {
+    if (_currentTaskId == null || _taskStatus == TranscriptionStatus.failed) {
+      return false;
+    }
+
+    // 对于WhisperX，检查是否至少有转录和单词级时间戳可用
+    if (_selectedModel == TranscriptionModel.whisperx) {
+      return _availableFiles.contains('transcription') &&
+          _availableFiles.contains('wordstamps');
+    }
+
+    // 对于其他模型，只有完成状态才能打开
+    return _taskStatus == TranscriptionStatus.completed;
+  }
+
+  /// 打开音频播放器
+  Future<void> _openAudioPlayer() async {
+    if (_currentTaskId == null || _selectedAudioFile == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('缺少必要的任务信息或音频文件')));
+      return;
+    }
+
+    try {
+      // 显示加载对话框
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('正在加载播放器数据...'),
+            ],
+          ),
+        ),
+      );
+
+      // 获取WhisperX播放器数据
+      final playerData = await _transcriptionService.getWhisperXPlayerData(
+        _currentTaskId!,
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop(); // 关闭加载对话框
+      }
+
+      if (playerData == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('播放器数据尚未准备就绪，请稍后重试')));
+        }
+        return;
+      }
+
+      // 创建AudioPlayData
+      final audioPlayData = AudioPlayerUtils.createFromWhisperXData(
+        taskId: _currentTaskId!,
+        filename: _selectedFileName ?? 'audio.wav',
+        audioFilePath: _selectedAudioFile!.path,
+        transcriptionData: playerData['transcription'],
+        wordstampsData: playerData['wordstamps'],
+        speakerData: playerData['speaker_segments'],
+      );
+
+      if (mounted) {
+        // 打开全屏播放器
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) =>
+                AudioLyricsPlayerPage(audioData: audioPlayData),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // 关闭加载对话框
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('打开播放器失败: $e')));
+      }
+      debugPrint('打开播放器失败: $e');
+    }
+  }
+
+  /// 下载所有可用的WhisperX文件
+  Future<void> _downloadAllAvailableFiles() async {
+    if (_currentTaskId == null || _availableFiles.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('没有可下载的文件')));
+      return;
+    }
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('正在下载文件...'),
+            ],
+          ),
+        ),
+      );
+
+      Map<String, String> downloadedFiles = {};
+
+      for (String fileType in _availableFiles) {
+        try {
+          String result = await _transcriptionService.downloadWhisperXResult(
+            _currentTaskId!,
+            fileType: fileType,
+          );
+          downloadedFiles[fileType] = result;
+        } catch (e) {
+          debugPrint('下载文件 $fileType 失败: $e');
+        }
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop(); // 关闭加载对话框
+
+        if (downloadedFiles.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('成功下载 ${downloadedFiles.length} 个文件')),
+          );
+
+          // 显示下载结果
+          _showDownloadResults(downloadedFiles);
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('没有成功下载任何文件')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('下载文件失败: $e')));
+      }
+    }
+  }
+
+  /// 查看WhisperX结果
+  Future<void> _viewWhisperXResults() async {
+    if (_currentTaskId == null || _availableFiles.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('没有可查看的结果')));
+      return;
+    }
+
+    try {
+      // 优先显示转录结果
+      String fileType = _availableFiles.contains('transcription')
+          ? 'transcription'
+          : _availableFiles.first;
+
+      String result = await _transcriptionService.downloadWhisperXResult(
+        _currentTaskId!,
+        fileType: fileType,
+      );
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('${_getFileDisplayName(fileType)} 结果'),
+            content: SingleChildScrollView(
+              child: SelectableText(
+                _formatTranscriptionResult(result),
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('关闭'),
+              ),
+              TextButton(
+                onPressed: () {
+                  // TODO: 实现复制到剪贴板功能
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
+                },
+                child: const Text('复制'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('查看结果失败: $e')));
+      }
+    }
+  }
+
+  /// 显示下载结果
+  void _showDownloadResults(Map<String, String> downloadedFiles) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('下载结果'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: DefaultTabController(
+            length: downloadedFiles.length,
+            child: Column(
+              children: [
+                TabBar(
+                  isScrollable: true,
+                  tabs: downloadedFiles.keys
+                      .map(
+                        (fileType) => Tab(text: _getFileDisplayName(fileType)),
+                      )
+                      .toList(),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: downloadedFiles.entries
+                        .map(
+                          (entry) => Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: SingleChildScrollView(
+                              child: SelectableText(
+                                _formatTranscriptionResult(entry.value),
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 获取文件类型的显示名称
+  String _getFileDisplayName(String fileType) {
+    switch (fileType) {
+      case 'transcription':
+        return '转录文本';
+      case 'wordstamps':
+        return '单词时间戳';
+      case 'speaker_segments':
+      case 'diarization':
+        return '说话人分离';
+      default:
+        return fileType;
+    }
   }
 }

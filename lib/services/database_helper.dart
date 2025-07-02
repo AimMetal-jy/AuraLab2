@@ -51,11 +51,8 @@ class DatabaseHelper {
   // 插入文本
   Future<int> insertText(String text) async {
     final db = await database;
-    final selectedText = SelectedText(
-      text: text,
-      createdAt: DateTime.now(),
-    );
-    
+    final selectedText = SelectedText(text: text, createdAt: DateTime.now());
+
     try {
       return await db.insert(
         _tableName,

@@ -425,19 +425,11 @@ class HomePageState extends State<HomePage>
         await audioService.pause();
       } else {
         // 播放音频
-        if (audio.isLocal) {
-          await audioService.play(
-            audio.filePath,
-            songName: audio.title,
-            artist: audio.artist,
-          );
-        } else {
-          await audioService.playFromFile(
-            audio.filePath,
-            songTitle: audio.title,
-            artist: audio.artist,
-          );
-        }
+        await audioService.playFromFile(
+          audio.filePath,
+          songTitle: audio.title,
+          artist: audio.artist,
+        );
       }
     } catch (e) {
       if (mounted) {
