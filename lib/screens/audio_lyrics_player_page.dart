@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/audio_player_model.dart';
@@ -18,6 +19,15 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
   late ScrollController _lyricsScrollController;
   bool _isInitialized = false;
 
+  // 添加：自动滚动相关状态变量
+  int? _previousActiveLyricId; // 跟踪上一个活跃歌词行ID
+  bool _isUserScrolling = false; // 跟踪用户是否正在手动滚动
+  Timer? _autoScrollTimer; // 自动滚动定时器
+  bool _autoScrollEnabled = true; // 控制自动滚动是否启用
+  bool _isUserClickedLyric = false; // 跟踪用户是否刚刚点击了歌词
+  Timer? _userClickTimer; // 用户点击后的定时器
+  final Map<int, GlobalKey> _lyricKeys = {}; // 为每个歌词行创建GlobalKey
+
   @override
   void initState() {
     super.initState();
@@ -27,9 +37,81 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
     );
     _lyricsScrollController = ScrollController();
 
+    // 添加：监听用户滚动事件
+    _lyricsScrollController.addListener(_onUserScroll);
+
     // 使用 WidgetsBinding 来确保 Provider 已经准备好
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializePlayer();
+    });
+  }
+
+  // 添加：处理用户滚动事件
+  void _onUserScroll() {
+    if (_lyricsScrollController.position.isScrollingNotifier.value) {
+      _isUserScrolling = true;
+      // 用户滚动3秒后恢复自动滚动
+      _autoScrollTimer?.cancel();
+      _autoScrollTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) {
+          _isUserScrolling = false;
+        }
+      });
+    }
+  }
+
+  // 添加：自动滚动到当前歌词行
+  void _scrollToCurrentLyric(int lyricIndex) {
+    if (!_autoScrollEnabled || _isUserScrolling || _isUserClickedLyric) {
+      return;
+    }
+
+    final key = _lyricKeys[lyricIndex];
+    if (key?.currentContext != null) {
+      // 使用Flutter的ensureVisible方法，确保widget在屏幕中央可见
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeInOutCubic,
+        alignment: 0.5, // 0.5表示居中对齐
+      );
+    }
+  }
+
+  // 添加：强制滚动到指定歌词行（用于用户点击）
+  void _forceScrollToLyric(int lyricIndex) {
+    final key = _lyricKeys[lyricIndex];
+    if (key?.currentContext != null) {
+      // 使用Flutter的ensureVisible方法，确保widget在屏幕中央可见
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+        alignment: 0.5, // 0.5表示居中对齐
+      );
+    }
+  }
+
+  // 添加：处理用户点击歌词的逻辑
+  void _onUserClickLyric(LyricLine lyricLine, AudioPlayerService player) {
+    // 立即更新状态以防止自动滚动冲突
+    _previousActiveLyricId = lyricLine.id;
+    _isUserClickedLyric = true;
+
+    // 取消之前的定时器
+    _userClickTimer?.cancel();
+
+    // 立即滚动到用户点击的歌词行（使用强制滚动）
+    _forceScrollToLyric(lyricLine.id);
+
+    // 播放器跳转到对应时间
+    player.seekToLyricLine(lyricLine);
+
+    // 1.5秒后恢复自动滚动（给播放器足够时间更新状态）
+    _userClickTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        _isUserClickedLyric = false;
+      }
     });
   }
 
@@ -140,10 +222,22 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
           );
         }
 
+        // 添加：检查当前歌词行是否发生变化，如果是则自动滚动
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final currentActiveLyric = player.currentLyricLine;
+          if (currentActiveLyric != null &&
+              currentActiveLyric.id != _previousActiveLyricId &&
+              !_isUserClickedLyric) {
+            _previousActiveLyricId = currentActiveLyric.id;
+            _scrollToCurrentLyric(currentActiveLyric.id);
+          }
+        });
+
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: ListView.builder(
             controller: _lyricsScrollController,
+            physics: const BouncingScrollPhysics(), // 改进：使用更平滑的滚动物理效果
             itemCount: lyrics.length,
             itemBuilder: (context, index) {
               final lyricLine = lyrics[index];
@@ -152,18 +246,36 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
                 lyricLine.speaker ?? '',
               );
 
+              // 为每个歌词行创建或获取GlobalKey
+              _lyricKeys[lyricLine.id] ??= GlobalKey();
+
               return GestureDetector(
-                onTap: () => player.seekToLyricLine(lyricLine),
-                child: Container(
+                key: _lyricKeys[lyricLine.id],
+                onTap: () => _onUserClickLyric(lyricLine, player),
+                child: AnimatedContainer(
+                  // 改进：添加动画效果
+                  duration: const Duration(milliseconds: 300),
                   margin: const EdgeInsets.symmetric(vertical: 12),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: isActive
-                        ? Colors.white.withValues(alpha: 0.1)
+                        ? Colors.white.withValues(alpha: 0.15) // 稍微增加活跃行的背景色
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                     border: isActive
-                        ? Border.all(color: Colors.white.withValues(alpha: 0.3))
+                        ? Border.all(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            width: 2, // 增加边框宽度以突出当前行
+                          )
+                        : null,
+                    boxShadow: isActive
+                        ? [
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
                         : null,
                   ),
                   child: Column(
@@ -408,7 +520,8 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
 
     final currentIndex = player.currentLyricLine?.id ?? 0;
     if (currentIndex > 0) {
-      player.seekToLyricLine(lyrics[currentIndex - 1]);
+      final targetLyric = lyrics[currentIndex - 1];
+      _onUserClickLyric(targetLyric, player);
     }
   }
 
@@ -418,7 +531,8 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
 
     final currentIndex = player.currentLyricLine?.id ?? -1;
     if (currentIndex < lyrics.length - 1) {
-      player.seekToLyricLine(lyrics[currentIndex + 1]);
+      final targetLyric = lyrics[currentIndex + 1];
+      _onUserClickLyric(targetLyric, player);
     }
   }
 
@@ -455,47 +569,78 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
       context: context,
       builder: (context) => Consumer<AudioPlayerService>(
         builder: (context, player, child) {
-          return AlertDialog(
-            backgroundColor: Colors.grey[900],
-            title: const Text('播放设置', style: TextStyle(color: Colors.white)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SwitchListTile(
-                  title: const Text(
-                    '单词高亮',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  value: player.config.showWordHighlight,
-                  onChanged: player.setWordHighlight,
-                  activeColor: Colors.white,
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                backgroundColor: Colors.grey[900],
+                title: const Text(
+                  '播放设置',
+                  style: TextStyle(color: Colors.white),
                 ),
-                SwitchListTile(
-                  title: const Text(
-                    '说话人标签',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  value: player.config.showSpeakerLabels,
-                  onChanged: player.setSpeakerLabels,
-                  activeColor: Colors.white,
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SwitchListTile(
+                      title: const Text(
+                        '单词高亮',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      value: player.config.showWordHighlight,
+                      onChanged: player.setWordHighlight,
+                      activeColor: Colors.white,
+                    ),
+                    SwitchListTile(
+                      title: const Text(
+                        '说话人标签',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      value: player.config.showSpeakerLabels,
+                      onChanged: player.setSpeakerLabels,
+                      activeColor: Colors.white,
+                    ),
+                    SwitchListTile(
+                      title: const Text(
+                        '循环播放',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      value: player.config.loopEnabled,
+                      onChanged: player.setLoopEnabled,
+                      activeColor: Colors.white,
+                    ),
+                    // 添加：自动滚动开关
+                    SwitchListTile(
+                      title: const Text(
+                        '歌词自动滚动',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      subtitle: const Text(
+                        '跟随播放进度自动滚动到中央',
+                        style: TextStyle(color: Colors.white60, fontSize: 12),
+                      ),
+                      value: _autoScrollEnabled,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          _autoScrollEnabled = value;
+                        });
+                        setState(() {
+                          _autoScrollEnabled = value;
+                        });
+                      },
+                      activeColor: Colors.white,
+                    ),
+                  ],
                 ),
-                SwitchListTile(
-                  title: const Text(
-                    '循环播放',
-                    style: TextStyle(color: Colors.white),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text(
+                      '关闭',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
-                  value: player.config.loopEnabled,
-                  onChanged: player.setLoopEnabled,
-                  activeColor: Colors.white,
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('关闭', style: TextStyle(color: Colors.white)),
-              ),
-            ],
+                ],
+              );
+            },
           );
         },
       ),
@@ -515,6 +660,10 @@ class _AudioLyricsPlayerPageState extends State<AudioLyricsPlayerPage>
 
   @override
   void dispose() {
+    _autoScrollTimer?.cancel(); // 添加：清理定时器
+    _userClickTimer?.cancel(); // 添加：清理用户点击定时器
+    _lyricsScrollController.removeListener(_onUserScroll); // 添加：移除监听器
+    _lyricKeys.clear(); // 清理歌词Key缓存
     _lyricsAnimationController.dispose();
     _lyricsScrollController.dispose();
     super.dispose();

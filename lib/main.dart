@@ -68,7 +68,7 @@ class MyApp extends StatelessWidget {
             final refreshRate = PerformanceConfig.getCurrentRefreshRate(
               context,
             );
-            debugPrint('当前刷新率: ${refreshRate}Hz');
+            debugPrint('当前刷新率: ${refreshRate.toStringAsFixed(2)}Hz');
           }
 
           return MediaQuery(

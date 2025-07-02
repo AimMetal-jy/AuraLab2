@@ -25,7 +25,7 @@ class TranscriptionService {
     _dio.interceptors.add(
       LogInterceptor(
         requestBody: false, // 文件上传时不记录请求体
-        responseBody: true,
+        responseBody: false,
         logPrint: (obj) => debugPrint(obj.toString()),
       ),
     );
@@ -172,7 +172,7 @@ class TranscriptionService {
         );
 
         if (response.statusCode == 200) {
-          debugPrint('WhisperX状态查询响应: ${response.data}');
+          //debugPrint('WhisperX状态查询响应: ${response.data}');
 
           // WhisperX返回的数据格式需要转换
           Map<String, dynamic> data = response.data;
@@ -189,8 +189,8 @@ class TranscriptionService {
             'filename': data['filename'],
           };
 
-          debugPrint('WhisperX原始状态: $whisperxStatus -> 标准状态: $standardStatus');
-          debugPrint('标准化后的数据: $standardizedData');
+          //debugPrint('WhisperX原始状态: $whisperxStatus -> 标准状态: $standardStatus');
+          //debugPrint('标准化后的数据: $standardizedData');
           return TranscriptionStatusResponse.fromJson(standardizedData);
         } else {
           throw DioException(
