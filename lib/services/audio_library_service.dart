@@ -123,8 +123,16 @@ class AudioLibraryService extends ChangeNotifier {
           vcn = parts.sublist(3).join('_');
         }
 
+        // 使用文件路径作为唯一标识符，确保不会重复
+        final id = 'tts_${file.path}';
+
+        // 检查是否已经存在相同ID的项目，避免重复
+        if (_audioItems.any((item) => item.id == id)) {
+          continue;
+        }
+
         final audioItem = AudioItem(
-          id: 'tts_${file.path.hashCode}',
+          id: id,
           title: fileName, // 使用文件名作为标题
           artist:
               'TTS生成 - ${_getVoiceName(vcn)} (${_getModeName(mode)})', // 音色信息作为艺术家信息
@@ -155,34 +163,32 @@ class AudioLibraryService extends ChangeNotifier {
       final fileName = path.basename(filePath);
       final fileStats = await file.stat();
 
-      // 检查是否已存在相同文件，避免重复添加
-      final existingIndex = _audioItems.indexWhere(
-        (item) => item.filePath == filePath,
+      // 使用文件路径作为唯一标识符，确保ID一致性
+      final id = 'tts_$filePath';
+
+      // 检查是否已存在相同ID的文件，避免重复添加
+      final existingIndex = _audioItems.indexWhere((item) => item.id == id);
+
+      final audioItem = AudioItem(
+        id: id,
+        title: fileName, // 使用文件名作为标题
+        artist: 'TTS生成 - ${_getVoiceName(vcn)} (${_getModeName(mode)})',
+        filePath: filePath,
+        type: AudioType.tts,
+        createdAt: fileStats.modified,
+        fileSize: fileStats.size,
       );
+
       if (existingIndex != -1) {
         // 如果已存在，更新而不是添加
-        _audioItems[existingIndex] = AudioItem(
-          id: 'tts_${file.path.hashCode}',
-          title: fileName, // 使用文件名作为标题
-          artist: 'TTS生成 - ${_getVoiceName(vcn)} (${_getModeName(mode)})',
-          filePath: filePath,
-          type: AudioType.tts,
-          createdAt: fileStats.modified,
-          fileSize: fileStats.size,
-        );
+        _audioItems[existingIndex] = audioItem;
       } else {
-        // 不存在则添加新项
-        final audioItem = AudioItem(
-          id: 'tts_${file.path.hashCode}',
-          title: fileName, // 使用文件名作为标题
-          artist: 'TTS生成 - ${_getVoiceName(vcn)} (${_getModeName(mode)})',
-          filePath: filePath,
-          type: AudioType.tts,
-          createdAt: fileStats.modified,
-          fileSize: fileStats.size,
-        );
+        // 不存在则添加新项到列表开头
         _audioItems.insert(0, audioItem);
       }
+
+      // 重新排序，确保最新的在前面
+      _audioItems.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       notifyListeners();
     } catch (e) {
