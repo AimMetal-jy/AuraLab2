@@ -26,6 +26,10 @@ class AudioPlayerService extends ChangeNotifier {
   LyricLine? _currentLyricLine;
   int? _currentWordIndex;
 
+  // 延迟歌词状态
+  LyricLine? _delayedLyricLine;
+  Timer? _delayedLyricsTimer;
+
   // 流订阅
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration>? _durationSubscription;
@@ -39,6 +43,7 @@ class AudioPlayerService extends ChangeNotifier {
   PlayerConfig get config => _config;
   LyricLine? get currentLyricLine => _currentLyricLine;
   int? get currentWordIndex => _currentWordIndex;
+  LyricLine? get delayedLyricLine => _delayedLyricLine;
 
   double get currentTimeInSeconds => _currentPosition.inMilliseconds / 1000.0;
   double get totalTimeInSeconds => _totalDuration.inMilliseconds / 1000.0;
@@ -252,6 +257,40 @@ class AudioPlayerService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 设置延迟歌词开关
+  void setDelayedLyricsEnabled(bool enabled) {
+    _config = _config.copyWith(delayedLyricsEnabled: enabled);
+    if (enabled) {
+      if (!hasTimestampData()) {
+        // 如果没有时间戳数据，关闭功能
+        _config = _config.copyWith(delayedLyricsEnabled: false);
+        debugPrint('该音频文件没有时间戳数据，无法使用延迟歌词功能');
+      } else {
+        _updateDelayedLyricSync();
+      }
+    } else {
+      _delayedLyricLine = null;
+      _delayedLyricsTimer?.cancel();
+    }
+    notifyListeners();
+  }
+
+  /// 设置延迟歌词延迟时间
+  void setDelayedLyricsDelay(double delay) {
+    _config = _config.copyWith(delayedLyricsDelay: delay);
+    if (_config.delayedLyricsEnabled) {
+      _updateDelayedLyricSync();
+    }
+    notifyListeners();
+  }
+
+  /// 检查是否有时间戳数据
+  bool hasTimestampData() {
+    return _audioData != null &&
+        _audioData!.lyrics.isNotEmpty &&
+        _audioData!.lyrics.any((line) => line.words.isNotEmpty);
+  }
+
   /// 播放完成处理
   void _onPlayCompleted() {
     if (_config.loopEnabled) {
@@ -287,6 +326,132 @@ class AudioPlayerService extends ChangeNotifier {
         _currentWordIndex = newWordIndex;
       }
     }
+
+    // 更新延迟歌词
+    if (_config.delayedLyricsEnabled) {
+      _updateDelayedLyricSync();
+    }
+  }
+
+  /// 更新延迟歌词同步
+  void _updateDelayedLyricSync() {
+    if (_audioData == null) return;
+
+    final currentTimeSeconds = currentTimeInSeconds;
+
+    // 计算所有歌词的调整后显示时间，避免重叠
+    final adjustedLyrics = _calculateAdjustedDelayedLyrics();
+
+    // 找到当前应该显示的延迟歌词
+    LyricLine? candidateLyric;
+    for (final lyricInfo in adjustedLyrics) {
+      // 检查当前时间是否在调整后的显示时间范围内
+      if (currentTimeSeconds >= lyricInfo['adjustedStartTime'] &&
+          currentTimeSeconds < lyricInfo['adjustedEndTime']) {
+        candidateLyric = lyricInfo['lyric'] as LyricLine;
+        break; // 找到当前应该显示的歌词，直接退出循环
+      }
+    }
+
+    // 更新延迟歌词
+    if (candidateLyric != _delayedLyricLine) {
+      _delayedLyricLine = candidateLyric;
+    }
+
+    // 如果音频已经播放完毕，检查是否还有未显示的歌词
+    if (_playerState == PlayerState.stopped) {
+      _scheduleRemainingLyrics();
+    }
+  }
+
+  /// 计算调整后的延迟歌词显示时间，避免重叠
+  List<Map<String, dynamic>> _calculateAdjustedDelayedLyrics() {
+    if (_audioData == null) return [];
+
+    final lyrics = _audioData!.lyrics;
+    final adjustedLyrics = <Map<String, dynamic>>[];
+    double lastEndTime = 0.0;
+
+    for (final line in lyrics) {
+      // 计算原始的延迟显示时间
+      final originalDelayedStartTime = line.end + _config.delayedLyricsDelay;
+      final originalDisplayDuration = line.end - line.start;
+
+      // 避免与前一句重叠，确保至少间隔0.5秒
+      final adjustedStartTime = originalDelayedStartTime > lastEndTime + 0.5
+          ? originalDelayedStartTime
+          : lastEndTime + 0.5;
+
+      // 保持原始显示时长，但至少显示2秒
+      final minDisplayDuration = 2.0;
+      final displayDuration = originalDisplayDuration > minDisplayDuration
+          ? originalDisplayDuration
+          : minDisplayDuration;
+
+      final adjustedEndTime = adjustedStartTime + displayDuration;
+
+      adjustedLyrics.add({
+        'lyric': line,
+        'originalDelayedStartTime': originalDelayedStartTime,
+        'adjustedStartTime': adjustedStartTime,
+        'adjustedEndTime': adjustedEndTime,
+        'displayDuration': displayDuration,
+      });
+
+      lastEndTime = adjustedEndTime;
+    }
+
+    return adjustedLyrics;
+  }
+
+  /// 调度剩余歌词显示（音频播放完后继续显示歌词）
+  void _scheduleRemainingLyrics() {
+    if (_audioData == null || !_config.delayedLyricsEnabled) return;
+
+    final currentTimeSeconds = currentTimeInSeconds;
+    final adjustedLyrics = _calculateAdjustedDelayedLyrics();
+
+    // 找到下一个应该显示的歌词行
+    Map<String, dynamic>? nextLyricInfo;
+
+    for (final lyricInfo in adjustedLyrics) {
+      final lyric = lyricInfo['lyric'] as LyricLine;
+      final adjustedStartTime = lyricInfo['adjustedStartTime'] as double;
+
+      // 如果这个句子还没到显示时间，且还没被显示过
+      if (adjustedStartTime > currentTimeSeconds &&
+          (_delayedLyricLine == null || lyric.id > _delayedLyricLine!.id)) {
+        nextLyricInfo = lyricInfo;
+        break;
+      }
+    }
+
+    if (nextLyricInfo != null) {
+      final nextLyricLine = nextLyricInfo['lyric'] as LyricLine;
+      final nextShowTime = nextLyricInfo['adjustedStartTime'] as double;
+      final displayDuration = nextLyricInfo['displayDuration'] as double;
+
+      final delayToShow = nextShowTime - currentTimeSeconds;
+      _delayedLyricsTimer?.cancel();
+
+      // 调度显示下一句歌词
+      _delayedLyricsTimer = Timer(
+        Duration(milliseconds: (delayToShow * 1000).round()),
+        () {
+          _delayedLyricLine = nextLyricLine;
+          notifyListeners();
+
+          // 调度隐藏当前歌词（在调整后的显示时长结束后）
+          Timer(Duration(milliseconds: (displayDuration * 1000).round()), () {
+            if (_delayedLyricLine == nextLyricLine) {
+              _delayedLyricLine = null;
+              notifyListeners();
+            }
+            _scheduleRemainingLyrics(); // 递归调度下一行
+          });
+        },
+      );
+    }
   }
 
   /// 获取播放时间的格式化字符串
@@ -304,6 +469,29 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// 获取进度字符串
   String get progressString => '$currentTimeString / $totalTimeString';
+
+  /// 获取调整后的延迟歌词信息（供外部使用）
+  List<Map<String, dynamic>> get adjustedDelayedLyrics =>
+      _calculateAdjustedDelayedLyrics();
+
+  /// 获取下一个即将显示的延迟歌词信息
+  Map<String, dynamic>? getNextDelayedLyricInfo() {
+    if (_audioData == null || !_config.delayedLyricsEnabled) return null;
+
+    final currentTimeSeconds = currentTimeInSeconds;
+    final adjustedLyrics = _calculateAdjustedDelayedLyrics();
+
+    for (final lyricInfo in adjustedLyrics) {
+      final adjustedStartTime = lyricInfo['adjustedStartTime'] as double;
+      final lyric = lyricInfo['lyric'] as LyricLine;
+
+      if (adjustedStartTime > currentTimeSeconds &&
+          (_delayedLyricLine == null || lyric.id > _delayedLyricLine!.id)) {
+        return lyricInfo;
+      }
+    }
+    return null;
+  }
 
   // 向后兼容的方法
 
@@ -380,6 +568,7 @@ class AudioPlayerService extends ChangeNotifier {
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _stateSubscription?.cancel();
+    _delayedLyricsTimer?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }

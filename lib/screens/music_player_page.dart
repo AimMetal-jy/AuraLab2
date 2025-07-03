@@ -14,6 +14,23 @@ class MusicPlayerPage extends StatelessWidget {
     final routeAudioData =
         audioData ?? ModalRoute.of(context)?.settings.arguments;
 
+    // 处理新的数据格式
+    if (routeAudioData is Map<String, dynamic>) {
+      if (routeAudioData.containsKey('audioData')) {
+        // ASR音频：包含完整的转录数据
+        return UnifiedPlayerPage(
+          audioData: routeAudioData['audioData'],
+          isTranscriptionAudio: routeAudioData['isTranscriptionAudio'] ?? false,
+        );
+      } else {
+        // 普通音频：包含文件路径和元数据
+        return UnifiedPlayerPage(
+          audioData: routeAudioData,
+          isTranscriptionAudio: false,
+        );
+      }
+    }
+
     return UnifiedPlayerPage(
       audioData: routeAudioData ?? 'assets/audio/English_Pod_30s.wav',
       isTranscriptionAudio: false,

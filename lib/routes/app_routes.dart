@@ -16,7 +16,7 @@ final router = GoRouter(
     GoRoute(path: '/asr', builder: (context, state) => const AsrPage()),
     GoRoute(
       path: '/music-player',
-      builder: (context, state) => const MusicPlayerPage(),
+      builder: (context, state) => MusicPlayerPage(audioData: state.extra),
     ),
   ],
 );

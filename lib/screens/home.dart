@@ -5,7 +5,9 @@ import 'package:file_picker/file_picker.dart';
 import '../services/audio_player_service.dart';
 import '../services/audio_library_service.dart';
 import '../config/performance_config.dart';
+import '../models/audio_player_model.dart';
 import 'dart:io';
+import 'dart:convert';
 import '../widgets/custom_toast.dart';
 
 class HomePage extends StatefulWidget {
@@ -25,7 +27,7 @@ class HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       setState(() {}); // 切换tab时刷新UI
     });
@@ -74,7 +76,7 @@ class HomePageState extends State<HomePage>
                         Consumer<AudioLibraryService>(
                           builder: (context, library, child) {
                             return Text(
-                              '共 ${library.totalCount} 个音频 · ${library.ttsCount} 个TTS生成',
+                              '共 ${library.totalCount} 个音频 · ${library.ttsCount} 个TTS生成 · ${library.asrCount} 个ASR转录',
                               style: TextStyle(
                                 color: Colors.grey[600],
                                 fontSize: 14,
@@ -148,6 +150,7 @@ class HomePageState extends State<HomePage>
               tabs: const [
                 Tab(text: '全部'),
                 Tab(text: 'TTS生成'),
+                Tab(text: 'ASR转录'),
                 Tab(text: '本地音频'),
               ],
               onTap: (index) {
@@ -160,6 +163,9 @@ class HomePageState extends State<HomePage>
                       _filterType = AudioType.tts;
                       break;
                     case 2:
+                      _filterType = AudioType.asr;
+                      break;
+                    case 3:
                       _filterType = AudioType.local;
                       break;
                   }
@@ -198,6 +204,8 @@ class HomePageState extends State<HomePage>
                         Icon(
                           _filterType == AudioType.tts
                               ? Icons.record_voice_over
+                              : _filterType == AudioType.asr
+                              ? Icons.transcribe
                               : Icons.music_note,
                           size: 64,
                           color: Colors.grey,
@@ -208,6 +216,8 @@ class HomePageState extends State<HomePage>
                               ? '没有找到匹配的音频'
                               : _filterType == AudioType.tts
                               ? '暂无TTS生成的音频'
+                              : _filterType == AudioType.asr
+                              ? '暂无ASR转录的音频'
                               : '暂无音频文件',
                           style: TextStyle(
                             fontSize: 18,
@@ -219,6 +229,13 @@ class HomePageState extends State<HomePage>
                           TextButton(
                             onPressed: () => context.push('/tts-processing'),
                             child: const Text('去生成TTS音频'),
+                          ),
+                        ],
+                        if (_filterType == AudioType.asr) ...[
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () => context.push('/asr'),
+                            child: const Text('去转录音频'),
                           ),
                         ],
                         if (_filterType == AudioType.local ||
@@ -463,30 +480,28 @@ class AudioListItem extends StatelessWidget {
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () async {
-                // 增加播放次数
-                if (item.id != null) {
-                  audioLibraryService.incrementPlayCount(item.id!);
-                }
-
-                if (isCurrent) {
-                  audioService.togglePlayPause();
+              onTap: () {
+                // 点击卡片进入字幕界面
+                if (item.isASR && item.transcriptionResult != null) {
+                  // ASR音频：创建AudioPlayData并显示转录结果
+                  final audioData = _createAudioPlayDataForASR(item);
+                  context.push(
+                    '/music-player',
+                    extra: {
+                      'audioData': audioData,
+                      'isTranscriptionAudio': true,
+                    },
+                  );
                 } else {
-                  try {
-                    await audioService.playFromFile(
-                      item.filePath,
-                      songTitle: item.title,
-                      artist: item.artist,
-                    );
-                  } catch (e) {
-                    // 使用 Home 页面上下文中定义的辅助函数
-                    (context as Element)
-                        .findAncestorStateOfType<HomePageState>()
-                        ?._showSnackBar(
-                          '播放失败: ${e.toString().replaceFirst('Exception: ', '')}',
-                          isError: true,
-                        );
-                  }
+                  // 普通音频：只传递文件路径
+                  context.push(
+                    '/music-player',
+                    extra: {
+                      'filePath': item.filePath,
+                      'title': item.title,
+                      'artist': item.artist,
+                    },
+                  );
                 }
               },
               onLongPress: onLongPress,
@@ -496,19 +511,47 @@ class AudioListItem extends StatelessWidget {
                 child: Row(
                   children: [
                     // 播放按钮
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: isCurrent
-                            ? Theme.of(context).primaryColor
-                            : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Icon(
-                        isPlaying ? Icons.pause : Icons.play_arrow,
-                        color: isCurrent ? Colors.white : Colors.grey[700],
-                        size: 24,
+                    GestureDetector(
+                      onTap: () async {
+                        // 增加播放次数
+                        if (item.id != null) {
+                          audioLibraryService.incrementPlayCount(item.id!);
+                        }
+
+                        if (isCurrent) {
+                          audioService.togglePlayPause();
+                        } else {
+                          try {
+                            await audioService.playFromFile(
+                              item.filePath,
+                              songTitle: item.title,
+                              artist: item.artist,
+                            );
+                          } catch (e) {
+                            // 使用 Home 页面上下文中定义的辅助函数
+                            (context as Element)
+                                .findAncestorStateOfType<HomePageState>()
+                                ?._showSnackBar(
+                                  '播放失败: ${e.toString().replaceFirst('Exception: ', '')}',
+                                  isError: true,
+                                );
+                          }
+                        }
+                      },
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: isCurrent
+                              ? Theme.of(context).primaryColor
+                              : Colors.grey[200],
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: Icon(
+                          isPlaying ? Icons.pause : Icons.play_arrow,
+                          color: isCurrent ? Colors.white : Colors.grey[700],
+                          size: 24,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -547,6 +590,27 @@ class AudioListItem extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: Colors.blue,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (item.isASR) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green[100],
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'ASR',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.green,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -616,12 +680,12 @@ class AudioListItem extends StatelessWidget {
                       },
                     ),
                     // 播放状态指示器
-                    if (isCurrent)
-                      Icon(
-                        isPlaying ? Icons.volume_up : Icons.pause,
-                        color: Theme.of(context).primaryColor,
-                        size: 24,
-                      ),
+                    // if (isCurrent)
+                    //   Icon(
+                    //     isPlaying ? Icons.volume_up : Icons.volume_off,
+                    //     color: Theme.of(context).primaryColor,
+                    //     size: 24,
+                    //   ),
                   ],
                 ),
               ),
@@ -657,5 +721,139 @@ class AudioListItem extends StatelessWidget {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  /// 为ASR音频创建AudioPlayData
+  AudioPlayData _createAudioPlayDataForASR(AudioItem item) {
+    try {
+      // 解析转录结果JSON
+      final transcriptionData = json.decode(item.transcriptionResult!);
+
+      // 检查是否是新的完整播放器数据格式
+      if (transcriptionData.containsKey('type') &&
+          transcriptionData['type'] == 'whisperx_player_data') {
+        // 使用AudioPlayerUtils创建，与ASR页面预览保持一致
+        final playerData =
+            transcriptionData['playerData'] as Map<String, dynamic>;
+        return AudioPlayerUtils.createFromWhisperXData(
+          taskId: transcriptionData['taskId'] ?? 'asr_${item.id}',
+          filename: transcriptionData['filename'] ?? item.title,
+          audioFilePath: item.filePath,
+          transcriptionData: playerData['transcription'],
+          wordstampsData: playerData['wordstamps'],
+          speakerData: playerData['speaker_segments'],
+        );
+      }
+
+      List<LyricLine> lyrics = [];
+      List<Speaker> speakers = [];
+
+      // 检查是否是WhisperX格式（包含segments）
+      if (transcriptionData.containsKey('segments')) {
+        final segments = transcriptionData['segments'] as List;
+
+        for (int i = 0; i < segments.length; i++) {
+          final segment = segments[i];
+
+          // 处理说话人信息
+          String? speakerId = segment['speaker']?.toString();
+          if (speakerId != null && !speakers.any((s) => s.id == speakerId)) {
+            speakers.add(
+              Speaker(
+                id: speakerId,
+                name: '说话人 ${speakers.length + 1}',
+                color: _getSpeakerColor(speakers.length),
+              ),
+            );
+          }
+
+          // 创建词级时间戳
+          List<WordTimestamp> words = [];
+          if (segment.containsKey('words')) {
+            final wordList = segment['words'] as List;
+            for (final word in wordList) {
+              words.add(
+                WordTimestamp(
+                  word: word['word']?.toString() ?? '',
+                  start: (word['start'] ?? 0.0).toDouble(),
+                  end: (word['end'] ?? 0.0).toDouble(),
+                  confidence: word['confidence']?.toDouble(),
+                  speaker: speakerId,
+                ),
+              );
+            }
+          }
+
+          // 创建歌词行
+          lyrics.add(
+            LyricLine(
+              id: i,
+              text: segment['text']?.toString() ?? '',
+              start: (segment['start'] ?? 0.0).toDouble(),
+              end: (segment['end'] ?? 0.0).toDouble(),
+              speaker: speakerId,
+              confidence: segment['confidence']?.toDouble(),
+              words: words,
+            ),
+          );
+        }
+      } else {
+        // 简单文本格式，创建单个歌词行
+        lyrics.add(
+          LyricLine(
+            id: 0,
+            text: item.transcriptionResult!,
+            start: 0.0,
+            end: 60.0, // 默认时长
+            words: [],
+          ),
+        );
+      }
+
+      return AudioPlayData(
+        taskId: 'asr_${item.id}',
+        filename: item.title,
+        audioFilePath: item.filePath,
+        language: 'auto',
+        lyrics: lyrics,
+        speakers: speakers,
+        duration: 0.0, // 实际播放时会获取
+      );
+    } catch (e) {
+      debugPrint('解析ASR转录结果失败: $e');
+      // 创建简单的AudioPlayData
+      return AudioPlayData(
+        taskId: 'asr_${item.id}',
+        filename: item.title,
+        audioFilePath: item.filePath,
+        language: 'auto',
+        lyrics: [
+          LyricLine(
+            id: 0,
+            text: item.transcriptionResult ?? '转录结果解析失败',
+            start: 0.0,
+            end: 60.0,
+            words: [],
+          ),
+        ],
+        speakers: [],
+        duration: 0.0,
+      );
+    }
+  }
+
+  /// 获取说话人颜色
+  String _getSpeakerColor(int index) {
+    final colors = [
+      '#FF6B6B',
+      '#4ECDC4',
+      '#45B7D1',
+      '#F9CA24',
+      '#F0932B',
+      '#EB4D4B',
+      '#6C5CE7',
+      '#A29BFE',
+    ];
+    return colors[index % colors.length];
   }
 }

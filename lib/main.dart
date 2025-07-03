@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:auralab_0701/routes/app_routes.dart';
 import 'package:auralab_0701/services/audio_player_service.dart';
 import 'package:auralab_0701/services/audio_library_service.dart';
+import 'package:auralab_0701/services/background_task_service.dart';
+import 'package:auralab_0701/services/mini_player_service.dart';
 import 'package:auralab_0701/config/performance_config.dart';
 
 void main() async {
@@ -43,6 +45,8 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (context) => AudioPlayerService()),
         ChangeNotifierProvider(create: (context) => AudioLibraryService()),
+        ChangeNotifierProvider(create: (context) => BackgroundTaskService()),
+        ChangeNotifierProvider(create: (context) => MiniPlayerService()),
       ],
       child: MaterialApp.router(
         debugShowCheckedModeBanner: false,

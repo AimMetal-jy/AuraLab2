@@ -208,6 +208,8 @@ class PlayerConfig {
   final double volume;
   final bool showWordHighlight;
   final bool showSpeakerLabels;
+  final bool delayedLyricsEnabled;
+  final double delayedLyricsDelay;
 
   PlayerConfig({
     this.loopEnabled = true,
@@ -215,6 +217,8 @@ class PlayerConfig {
     this.volume = 1.0,
     this.showWordHighlight = true,
     this.showSpeakerLabels = true,
+    this.delayedLyricsEnabled = false,
+    this.delayedLyricsDelay = 3.0,
   });
 
   factory PlayerConfig.fromJson(Map<String, dynamic> json) =>
@@ -228,6 +232,8 @@ class PlayerConfig {
     double? volume,
     bool? showWordHighlight,
     bool? showSpeakerLabels,
+    bool? delayedLyricsEnabled,
+    double? delayedLyricsDelay,
   }) {
     return PlayerConfig(
       loopEnabled: loopEnabled ?? this.loopEnabled,
@@ -235,6 +241,8 @@ class PlayerConfig {
       volume: volume ?? this.volume,
       showWordHighlight: showWordHighlight ?? this.showWordHighlight,
       showSpeakerLabels: showSpeakerLabels ?? this.showSpeakerLabels,
+      delayedLyricsEnabled: delayedLyricsEnabled ?? this.delayedLyricsEnabled,
+      delayedLyricsDelay: delayedLyricsDelay ?? this.delayedLyricsDelay,
     );
   }
 }

@@ -3,6 +3,7 @@ export 'unified_player_page.dart';
 export 'player_controls.dart';
 export 'progress_bar.dart';
 export 'lyrics_display.dart';
+export 'delayed_lyrics_display.dart';
 export 'player_settings.dart';
 export 'mini_player.dart';
 export 'playlist_dialog.dart';

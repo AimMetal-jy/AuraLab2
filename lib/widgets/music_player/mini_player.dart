@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/audio_player_service.dart';
+import '../../services/mini_player_service.dart';
 import 'clickable_progress_bar.dart';
 import 'playlist_dialog.dart';
 import 'unified_player_page.dart';
@@ -14,11 +15,25 @@ class MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<AudioPlayerService>(
-      builder: (context, audioService, child) {
+    return Consumer2<AudioPlayerService, MiniPlayerService>(
+      builder: (context, audioService, miniPlayerService, child) {
         // 如果没有正在播放的音乐，不显示迷你播放器
         if (audioService.currentSong == null) {
           return const SizedBox.shrink();
+        }
+
+        // 如果Mini Player被隐藏，不显示
+        if (!miniPlayerService.isVisible) {
+          return const SizedBox.shrink();
+        }
+
+        // 如果Mini Player被最小化，只显示一个小的悬浮按钮
+        if (miniPlayerService.isMinimized) {
+          return _buildMinimizedPlayer(
+            context,
+            audioService,
+            miniPlayerService,
+          );
         }
 
         return Container(
@@ -61,21 +76,22 @@ class MiniPlayer extends StatelessWidget {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: GestureDetector(
-                  onTap: () => _openFullPlayer(context, audioService),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Row(
-                      children: [
-                        // 专辑封面
-                        _buildAlbumCover(audioService),
-                        const SizedBox(width: 12),
-                        // 歌曲信息
-                        _buildSongInfo(audioService),
-                        // 播放控制按钮
-                        _buildControlButtons(context, audioService),
-                      ],
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Row(
+                    children: [
+                      // 专辑封面
+                      _buildAlbumCover(context, audioService),
+                      const SizedBox(width: 12),
+                      // 歌曲信息（也可以点击进入全屏）
+                      _buildSongInfo(context, audioService),
+                      // 播放控制按钮
+                      _buildControlButtons(
+                        context,
+                        audioService,
+                        miniPlayerService,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -86,52 +102,76 @@ class MiniPlayer extends StatelessWidget {
     );
   }
 
-  Widget _buildAlbumCover(AudioPlayerService audioService) {
+  Widget _buildAlbumCover(
+    BuildContext context,
+    AudioPlayerService audioService,
+  ) {
     // 根据音频类型显示不同的图标
     final isTranscriptionAudio = audioService.audioData != null;
 
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.grey[300],
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Icon(
-        isTranscriptionAudio ? Icons.record_voice_over : Icons.music_note,
-        color: Colors.grey[600],
-        size: 20,
+    return GestureDetector(
+      onTap: () => _openFullPlayer(context, audioService),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.grey[300],
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(
+          isTranscriptionAudio ? Icons.record_voice_over : Icons.music_note,
+          color: Colors.grey[600],
+          size: 20,
+        ),
       ),
     );
   }
 
-  Widget _buildSongInfo(AudioPlayerService audioService) {
+  Widget _buildSongInfo(BuildContext context, AudioPlayerService audioService) {
     return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            audioService.currentSong ?? 'Unknown Song',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            audioService.currentArtist ?? 'Unknown Artist',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+      child: GestureDetector(
+        onTap: () => _openFullPlayer(context, audioService),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              audioService.currentSong ?? 'Unknown Song',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              audioService.currentArtist ?? 'Unknown Artist',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  /// 构建最小化状态的播放器
+  Widget _buildMinimizedPlayer(
+    BuildContext context,
+    AudioPlayerService audioService,
+    MiniPlayerService miniPlayerService,
+  ) {
+    return const SizedBox(
+      height: 0, // 不占用空间，因为我们将使用全局浮动组件
+      width: double.infinity,
     );
   }
 
   Widget _buildControlButtons(
     BuildContext context,
     AudioPlayerService audioService,
+    MiniPlayerService miniPlayerService,
   ) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -157,6 +197,26 @@ class MiniPlayer extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         ),
+        // 最小化按钮
+        IconButton(
+          onPressed: () {
+            miniPlayerService.minimize();
+          },
+          icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          tooltip: '最小化',
+        ),
+        // 隐藏按钮
+        IconButton(
+          onPressed: () {
+            miniPlayerService.hide();
+          },
+          icon: const Icon(Icons.close, size: 18),
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          tooltip: '隐藏播放器',
+        ),
       ],
     );
   }
@@ -170,22 +230,23 @@ class MiniPlayer extends StatelessWidget {
 
     // 智能判断音频类型并打开相应的播放器
     final audioData = audioService.audioData;
-    final isTranscriptionAudio = audioData != null;
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => UnifiedPlayerPage(
-          audioData:
-              audioData ??
-              {
-                'filePath': '', // 这里可能需要从audioService获取当前文件路径
-                'title': audioService.currentSong,
-                'artist': audioService.currentArtist,
-              },
-          isTranscriptionAudio: isTranscriptionAudio,
+    if (audioData != null) {
+      // 如果有audioData，说明是通过AudioPlayerService播放的音频
+      final isTranscriptionAudio = audioData.lyrics.isNotEmpty;
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => UnifiedPlayerPage(
+            audioData: audioData,
+            isTranscriptionAudio: isTranscriptionAudio,
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      // 如果没有audioData，说明没有正在播放的音频
+      debugPrint('没有正在播放的音频数据');
+    }
   }
 
   /// 显示播放列表对话框

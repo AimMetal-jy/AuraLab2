@@ -2,11 +2,14 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:provider/provider.dart';
 import '../services/transcription_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/huggingface_token_service.dart';
+import '../services/background_task_service.dart';
 import '../models/transcription_model.dart';
 import '../widgets/music_player/music_player.dart';
+import '../widgets/background_task_panel.dart';
 import '../screens/huggingface_config_page.dart';
 import '../widgets/custom_toast.dart';
 
@@ -19,6 +22,7 @@ class AsrPage extends StatefulWidget {
 
 class _AsrPageState extends State<AsrPage> {
   final TranscriptionService _transcriptionService = TranscriptionService();
+  final BackgroundTaskService _backgroundTaskService = BackgroundTaskService();
 
   // 选择的音频文件
   File? _selectedAudioFile;
@@ -32,6 +36,8 @@ class _AsrPageState extends State<AsrPage> {
   String? _selectedComputeType;
   bool _enableWordTimestamps = true; // 是否生成单词级时间戳
   bool _enableSpeakerDiarization = false; // 是否进行说话人识别
+  String _selectedModelName = 'small'; // 选择的模型名称
+  Map<String, dynamic>? _modelInfo; // 模型信息
 
   // 任务状态
   String? _currentTaskId;
@@ -53,12 +59,202 @@ class _AsrPageState extends State<AsrPage> {
   void initState() {
     super.initState();
     _loadTaskHistory();
+    _loadModelInfo();
   }
 
   @override
   void dispose() {
     _transcriptionService.dispose();
     super.dispose();
+  }
+
+  /// 加载模型信息
+  Future<void> _loadModelInfo() async {
+    try {
+      final modelInfo = await _transcriptionService.getWhisperXModelInfo();
+      setState(() {
+        _modelInfo = modelInfo;
+      });
+    } catch (e) {
+      debugPrint('加载模型信息失败: $e');
+    }
+  }
+
+  /// 显示模型信息对话框
+  void _showModelInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('WhisperX 模型信息'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: MediaQuery.of(context).size.height * 0.6,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '选择适合您需求的模型：',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                if (_modelInfo != null && _modelInfo!['data'] != null) ...[
+                  ..._buildModelInfoCards(),
+                ] else ...[
+                  const Center(child: CircularProgressIndicator()),
+                  const SizedBox(height: 16),
+                  const Text('正在加载模型信息...'),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建模型信息卡片
+  List<Widget> _buildModelInfoCards() {
+    final supportedModels =
+        _modelInfo!['data']['supported_models'] as Map<String, dynamic>? ?? {};
+
+    return supportedModels.entries.map((entry) {
+      final modelName = entry.key;
+      final modelInfo = entry.value as Map<String, dynamic>;
+
+      return Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    modelName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const Spacer(),
+                  Chip(
+                    label: Text(modelInfo['parameters'] ?? ''),
+                    backgroundColor: Colors.blue.shade100,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                modelInfo['description'] ?? '',
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.memory, size: 16, color: Colors.grey.shade600),
+                  const SizedBox(width: 4),
+                  Text(
+                    '显存需求: ${modelInfo['vram'] ?? '未知'}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(width: 16),
+                  Icon(Icons.speed, size: 16, color: Colors.grey.shade600),
+                  const SizedBox(width: 4),
+                  Text(
+                    '速度: ${modelInfo['relative_speed'] ?? '未知'}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.recommend,
+                      size: 16,
+                      color: Colors.green.shade700,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        '推荐用途: ${modelInfo['recommended_for'] ?? ''}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  /// 构建模型下拉选项
+  List<DropdownMenuItem<String>> _buildModelDropdownItems() {
+    if (_modelInfo == null || _modelInfo!['data'] == null) {
+      // 如果模型信息未加载，返回基本选项
+      return [
+        const DropdownMenuItem(value: 'tiny', child: Text('tiny - 最快速度，最低精度')),
+        const DropdownMenuItem(value: 'base', child: Text('base - 平衡选择')),
+        const DropdownMenuItem(value: 'small', child: Text('small - 推荐选择')),
+        const DropdownMenuItem(value: 'medium', child: Text('medium - 高精度')),
+        const DropdownMenuItem(value: 'large', child: Text('large - 最高精度')),
+        const DropdownMenuItem(value: 'turbo', child: Text('turbo - 高速高质量')),
+      ];
+    }
+
+    final supportedModels =
+        _modelInfo!['data']['supported_models'] as Map<String, dynamic>? ?? {};
+
+    return supportedModels.entries.map((entry) {
+      final modelName = entry.key;
+      final modelInfo = entry.value as Map<String, dynamic>;
+      final description = modelInfo['description'] ?? '';
+      final parameters = modelInfo['parameters'] ?? '';
+      final speed = modelInfo['relative_speed'] ?? '';
+
+      return DropdownMenuItem<String>(
+        value: modelName,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$modelName ($parameters)',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text(
+              description,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            Text(
+              '速度: $speed',
+              style: const TextStyle(fontSize: 11, color: Colors.blue),
+            ),
+          ],
+        ),
+      );
+    }).toList();
   }
 
   /// 选择音频文件
@@ -138,20 +334,37 @@ class _AsrPageState extends State<AsrPage> {
                 ? _enableSpeakerDiarization
                 : null,
             huggingFaceToken: huggingFaceToken,
+            modelName: _selectedModel == TranscriptionModel.whisperx
+                ? _selectedModelName
+                : null,
           );
 
       setState(() {
         _currentTaskId = response.taskId;
         _taskStatus = TranscriptionStatus.processing;
         _statusMessage = response.message ?? '任务已提交，正在处理中...';
+        _isProcessing = false; // 任务已提交到后台，界面不再处理中
       });
 
       if (mounted) {
-        _showStatusSnackBar('任务提交成功！任务ID: ${response.taskId}');
+        _showStatusSnackBar('任务提交成功！任务已转入后台处理');
       }
 
-      // 开始轮询任务状态
-      _pollTaskStatus();
+      // 添加任务到后台任务管理器
+      await _backgroundTaskService.addAsrTask(
+        audioFilePath: _selectedAudioFile!.path,
+        fileName: _selectedFileName ?? 'audio.wav',
+        model: _selectedModel,
+        taskId: response.taskId,
+        language: _selectedLanguage,
+        computeType: _selectedComputeType,
+        enableWordTimestamps: _enableWordTimestamps,
+        enableSpeakerDiarization: _enableSpeakerDiarization,
+        modelName: _selectedModelName,
+      );
+
+      // 更新任务历史
+      _loadTaskHistory();
     } catch (e) {
       setState(() {
         _isProcessing = false;
@@ -160,140 +373,6 @@ class _AsrPageState extends State<AsrPage> {
 
       if (mounted) {
         _showStatusSnackBar(_statusMessage!, isError: true);
-      }
-    }
-  }
-
-  /// 轮询任务状态
-  Future<void> _pollTaskStatus() async {
-    if (_currentTaskId == null) return;
-
-    int consecutiveErrors = 0;
-    const int maxConsecutiveErrors = 3;
-    const int maxPollAttempts = 180; // 最多轮询3分钟 (180 * 1秒)
-    int pollAttempts = 0;
-
-    while ((_taskStatus == TranscriptionStatus.processing ||
-            _taskStatus == TranscriptionStatus.pending) &&
-        pollAttempts < maxPollAttempts) {
-      pollAttempts++;
-      await Future.delayed(const Duration(seconds: 1));
-
-      try {
-        TranscriptionStatusResponse statusResponse = await _transcriptionService
-            .getTaskStatus(_currentTaskId!, _selectedModel);
-
-        // 重置连续错误计数
-        consecutiveErrors = 0;
-
-        setState(() {
-          _taskStatus = statusResponse.status;
-          _statusMessage =
-              statusResponse.message ?? _getStatusText(statusResponse.status);
-        });
-
-        // 对于WhisperX，获取详细状态信息
-        if (_selectedModel == TranscriptionModel.whisperx) {
-          try {
-            _whisperxDetailedStatus = await _transcriptionService
-                .getWhisperXDetailedStatus(_currentTaskId!);
-
-            if (_whisperxDetailedStatus != null) {
-              final availableFiles =
-                  _whisperxDetailedStatus!['available_files'] as List?;
-              setState(() {
-                _availableFiles = availableFiles?.cast<String>() ?? [];
-              });
-
-              // 如果至少有基础转录，允许显示状态，如果有单词时间戳则允许打开播放器
-              final hasTranscription = _availableFiles.contains(
-                'transcription',
-              );
-              final hasMinimumFiles =
-                  hasTranscription &&
-                  (_enableWordTimestamps
-                      ? _availableFiles.contains('wordstamps')
-                      : true);
-
-              if (hasMinimumFiles &&
-                  _taskStatus != TranscriptionStatus.completed) {
-                setState(() {
-                  _statusMessage =
-                      '${_statusMessage ?? ''} • 可用文件: ${_availableFiles.join(', ')}';
-                });
-              }
-            }
-          } catch (e) {
-            debugPrint('获取WhisperX详细状态失败: $e');
-            // 详细状态获取失败不影响主要轮询逻辑
-          }
-        }
-
-        if (statusResponse.status == TranscriptionStatus.completed) {
-          await _downloadTranscriptionResult();
-          break;
-        } else if (statusResponse.status == TranscriptionStatus.failed) {
-          break;
-        }
-      } catch (e) {
-        consecutiveErrors++;
-        debugPrint('轮询任务状态失败 (第$consecutiveErrors次): $e');
-
-        if (consecutiveErrors >= maxConsecutiveErrors) {
-          setState(() {
-            _statusMessage = '连续查询任务状态失败，请检查网络连接或稍后重试';
-            _taskStatus = TranscriptionStatus.failed;
-          });
-          break;
-        } else {
-          // 连续错误未达到上限，继续轮询但显示警告
-          setState(() {
-            _statusMessage =
-                '查询状态遇到问题，正在重试... ($consecutiveErrors/$maxConsecutiveErrors)';
-          });
-          // 增加重试延迟
-          await Future.delayed(Duration(seconds: consecutiveErrors * 2));
-        }
-      }
-    }
-
-    // 如果达到最大轮询次数仍未完成
-    if (pollAttempts >= maxPollAttempts &&
-        (_taskStatus == TranscriptionStatus.processing ||
-            _taskStatus == TranscriptionStatus.pending)) {
-      setState(() {
-        _statusMessage = '任务处理超时，请稍后手动刷新状态';
-      });
-    }
-
-    setState(() {
-      _isProcessing = false;
-    });
-
-    // 更新任务历史
-    _loadTaskHistory();
-  }
-
-  /// 下载转录结果
-  Future<void> _downloadTranscriptionResult() async {
-    if (_currentTaskId == null) return;
-
-    try {
-      String result = await _transcriptionService.downloadTranscriptionResult(
-        _currentTaskId!,
-        _selectedModel,
-      );
-
-      setState(() {
-        _transcriptionResult = result;
-      });
-
-      if (mounted) {
-        _showStatusSnackBar('转录完成！');
-      }
-    } catch (e) {
-      if (mounted) {
-        _showStatusSnackBar('下载结果失败: $e', isError: true);
       }
     }
   }
@@ -365,11 +444,9 @@ class _AsrPageState extends State<AsrPage> {
         }
       }
 
-      // 如果任务已完成且还没有下载结果，则自动下载
-      if (statusResponse.status == TranscriptionStatus.completed &&
-          _transcriptionResult == null) {
-        debugPrint('任务已完成，开始自动下载结果...');
-        await _downloadTranscriptionResult();
+      // 如果任务已完成，显示完成信息
+      if (statusResponse.status == TranscriptionStatus.completed) {
+        debugPrint('任务已完成，结果已由后台服务处理');
       }
 
       if (mounted) {
@@ -440,6 +517,25 @@ class _AsrPageState extends State<AsrPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 后台任务面板
+            Consumer<BackgroundTaskService>(
+              builder: (context, taskService, child) {
+                final asrTasks = taskService.tasks
+                    .where((task) => task.type == TaskType.asr)
+                    .toList();
+
+                if (asrTasks.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+
+                return Column(
+                  children: [
+                    const BackgroundTaskPanel(),
+                    const SizedBox(height: 16),
+                  ],
+                );
+              },
+            ),
             // 文件选择区域
             Card(
               elevation: 4,
@@ -623,6 +719,42 @@ class _AsrPageState extends State<AsrPage> {
                                 ),
                               ],
                             ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // 模型选择
+                      const Text(
+                        '模型选择:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(
+                                labelText: '选择模型',
+                                border: OutlineInputBorder(),
+                                helperText: '不同模型在速度、精度和资源需求方面有所不同',
+                              ),
+                              value: _selectedModelName,
+                              onChanged: _isProcessing
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        _selectedModelName = value ?? 'small';
+                                      });
+                                    },
+                              items: _buildModelDropdownItems(),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: _showModelInfoDialog,
+                            icon: const Icon(Icons.info_outline),
+                            tooltip: '查看模型详细信息',
                           ),
                         ],
                       ),

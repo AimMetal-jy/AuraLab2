@@ -9,12 +9,14 @@ class PlayerControls extends StatelessWidget {
   final bool isTranscriptionAudio;
   final dynamic audioData;
   final VoidCallback? onSettingsPressed;
+  final bool showProgressBar;
 
   const PlayerControls({
     super.key,
     required this.isTranscriptionAudio,
     this.audioData,
     this.onSettingsPressed,
+    this.showProgressBar = false,
   });
 
   @override
@@ -25,9 +27,11 @@ class PlayerControls extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              // 进度条
-              UnifiedProgressBar(),
-              const SizedBox(height: 24),
+              // 进度条（只在歌词视图时显示）
+              if (showProgressBar) ...[
+                UnifiedProgressBar(),
+                const SizedBox(height: 24),
+              ],
               // 播放控制按钮
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -60,13 +64,11 @@ class PlayerControls extends StatelessWidget {
                       onPressed: () => player.toggleShuffle(),
                       icon: Icon(
                         Icons.shuffle,
-                        color: player.isShuffle 
-                            ? Colors.white 
-                            : Colors.white54,
+                        color: player.isShuffle ? Colors.white : Colors.white54,
                         size: 24,
                       ),
                     ),
-                  
+
                   // 上一句/上一首
                   IconButton(
                     onPressed: () => _seekToPrevious(player),
@@ -76,7 +78,7 @@ class PlayerControls extends StatelessWidget {
                       size: 32,
                     ),
                   ),
-                  
+
                   // 播放/暂停
                   GestureDetector(
                     onTap: () => _togglePlayPause(player),
@@ -96,7 +98,7 @@ class PlayerControls extends StatelessWidget {
                       ),
                     ),
                   ),
-                  
+
                   // 下一句/下一首
                   IconButton(
                     onPressed: () => _seekToNext(player),
@@ -106,7 +108,7 @@ class PlayerControls extends StatelessWidget {
                       size: 32,
                     ),
                   ),
-                  
+
                   // 循环播放
                   IconButton(
                     onPressed: () => _toggleRepeat(player),
@@ -118,7 +120,7 @@ class PlayerControls extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               // 音量控制（普通音频才显示）
               if (!isTranscriptionAudio) ...[
                 const SizedBox(height: 20),
@@ -137,11 +139,7 @@ class PlayerControls extends StatelessWidget {
                         inactiveColor: Colors.grey[800],
                       ),
                     ),
-                    const Icon(
-                      Icons.volume_up,
-                      color: Colors.white,
-                      size: 20,
-                    ),
+                    const Icon(Icons.volume_up, color: Colors.white, size: 20),
                   ],
                 ),
               ],
@@ -237,4 +235,4 @@ class PlayerControls extends StatelessWidget {
       ),
     );
   }
-} 
+}

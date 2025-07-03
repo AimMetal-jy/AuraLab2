@@ -13,7 +13,7 @@ class DatabaseHelper {
 
   // 数据库名称和版本
   static const String _databaseName = 'auralab.db'; // 统一数据库名称
-  static const int _databaseVersion = 2; // 升级版本以添加新表
+  static const int _databaseVersion = 3; // 升级版本以添加新字段
 
   // 表名和字段
   // -- TTS 文本选择表
@@ -35,6 +35,7 @@ class DatabaseHelper {
   static const String _audioColumnPlayCount = 'playCount';
   static const String _audioColumnIsFavorite = 'isFavorite';
   static const String _audioColumnLastPlayed = 'lastPlayed';
+  static const String _audioColumnTranscriptionResult = 'transcriptionResult';
 
   // 获取数据库实例
   Future<Database> get database async {
@@ -65,6 +66,9 @@ class DatabaseHelper {
     if (oldVersion < 2) {
       await _createAudioTable(db);
     }
+    if (oldVersion < 3) {
+      await _addTranscriptionResultColumn(db);
+    }
   }
 
   // 创建 TTS 文本表
@@ -92,8 +96,17 @@ class DatabaseHelper {
         $_audioColumnDuration INTEGER,
         $_audioColumnPlayCount INTEGER NOT NULL DEFAULT 0,
         $_audioColumnIsFavorite INTEGER NOT NULL DEFAULT 0,
-        $_audioColumnLastPlayed INTEGER
+        $_audioColumnLastPlayed INTEGER,
+        $_audioColumnTranscriptionResult TEXT
       )
+    ''');
+  }
+
+  // 添加转录结果字段（数据库升级用）
+  Future<void> _addTranscriptionResultColumn(Database db) async {
+    await db.execute('''
+      ALTER TABLE $_audioTableName
+      ADD COLUMN $_audioColumnTranscriptionResult TEXT
     ''');
   }
 

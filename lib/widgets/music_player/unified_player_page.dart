@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/audio_player_model.dart';
 import '../../services/audio_player_service.dart';
+import '../../widgets/custom_toast.dart';
 import 'player_controls.dart';
 import 'lyrics_display.dart';
+import 'delayed_lyrics_display.dart';
 import 'progress_bar.dart';
 import 'player_settings.dart';
 
@@ -128,6 +130,7 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage>
                 isTranscriptionAudio: widget.isTranscriptionAudio,
                 audioData: _showLyrics ? widget.audioData : null,
                 onSettingsPressed: _showSettings,
+                showProgressBar: _showLyrics, // 只在歌词视图时显示进度条
               ),
             ],
           ),
@@ -216,6 +219,26 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage>
               ),
               tooltip: _showLyrics ? '切换到播放器' : '切换到歌词',
             ),
+          // 延迟歌词开关（如果支持歌词）
+          if (widget.isTranscriptionAudio && widget.audioData is AudioPlayData)
+            Consumer<AudioPlayerService>(
+              builder: (context, player, child) {
+                return IconButton(
+                  onPressed: () => _toggleDelayedLyrics(player),
+                  icon: Icon(
+                    player.config.delayedLyricsEnabled
+                        ? Icons.schedule
+                        : Icons.schedule_outlined,
+                    color: player.config.delayedLyricsEnabled
+                        ? Colors.amber
+                        : Colors.white,
+                  ),
+                  tooltip: player.config.delayedLyricsEnabled
+                      ? '关闭延迟歌词'
+                      : '开启延迟歌词',
+                );
+              },
+            ),
           IconButton(
             onPressed: _showSettings,
             icon: const Icon(Icons.settings, color: Colors.white),
@@ -294,13 +317,23 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage>
       );
     }
 
-    return LyricsDisplay(
-      audioData: widget.audioData as AudioPlayData,
-      autoScrollEnabled: _autoScrollEnabled,
-      onAutoScrollChanged: (enabled) {
-        setState(() {
-          _autoScrollEnabled = enabled;
-        });
+    return Consumer<AudioPlayerService>(
+      builder: (context, player, child) {
+        if (player.config.delayedLyricsEnabled) {
+          return DelayedLyricsDisplay(
+            audioData: widget.audioData as AudioPlayData,
+          );
+        } else {
+          return LyricsDisplay(
+            audioData: widget.audioData as AudioPlayData,
+            autoScrollEnabled: _autoScrollEnabled,
+            onAutoScrollChanged: (enabled) {
+              setState(() {
+                _autoScrollEnabled = enabled;
+              });
+            },
+          );
+        }
       },
     );
   }
@@ -309,6 +342,22 @@ class _UnifiedPlayerPageState extends State<UnifiedPlayerPage>
     setState(() {
       _showLyrics = !_showLyrics;
     });
+  }
+
+  void _toggleDelayedLyrics(AudioPlayerService player) {
+    final newEnabled = !player.config.delayedLyricsEnabled;
+
+    if (newEnabled && !player.hasTimestampData()) {
+      // 如果没有时间戳数据，显示toast提示
+      CustomToast.show(
+        context,
+        message: '该音频文件没有时间戳数据，无法使用延迟歌词功能',
+        type: ToastType.warning,
+      );
+      return;
+    }
+
+    player.setDelayedLyricsEnabled(newEnabled);
   }
 
   void _showSettings() {

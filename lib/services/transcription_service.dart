@@ -87,6 +87,7 @@ class TranscriptionService {
   /// [enableWordTimestamps] 是否生成单词级时间戳（可选）
   /// [enableSpeakerDiarization] 是否进行说话人识别（可选）
   /// [huggingFaceToken] HuggingFace Token（可选，说话人识别需要）
+  /// [modelName] 模型名称（可选，默认为small）
   Future<TranscriptionSubmitResponse> submitWhisperXTask(
     File audioFile, {
     String? language,
@@ -94,6 +95,7 @@ class TranscriptionService {
     bool? enableWordTimestamps,
     bool? enableSpeakerDiarization,
     String? huggingFaceToken,
+    String? modelName,
   }) async {
     try {
       debugPrint('提交WhisperX转录任务: ${audioFile.path}');
@@ -111,6 +113,7 @@ class TranscriptionService {
         if (enableSpeakerDiarization != null)
           'enable_speaker_diarization': enableSpeakerDiarization.toString(),
         if (huggingFaceToken != null) 'huggingface_token': huggingFaceToken,
+        if (modelName != null) 'model_name': modelName,
       });
 
       // 发送POST请求到统一接口
@@ -339,6 +342,7 @@ class TranscriptionService {
   /// [enableWordTimestamps] 是否生成单词级时间戳（仅WhisperX使用）
   /// [enableSpeakerDiarization] 是否进行说话人识别（仅WhisperX使用）
   /// [huggingFaceToken] HuggingFace Token（仅WhisperX说话人识别使用）
+  /// [modelName] 模型名称（仅WhisperX使用）
   Future<TranscriptionSubmitResponse> submitTranscriptionTask(
     File audioFile,
     TranscriptionModel model, {
@@ -347,6 +351,7 @@ class TranscriptionService {
     bool? enableWordTimestamps,
     bool? enableSpeakerDiarization,
     String? huggingFaceToken,
+    String? modelName,
   }) async {
     switch (model) {
       case TranscriptionModel.bluelm:
@@ -359,6 +364,7 @@ class TranscriptionService {
           enableWordTimestamps: enableWordTimestamps,
           enableSpeakerDiarization: enableSpeakerDiarization,
           huggingFaceToken: huggingFaceToken,
+          modelName: modelName,
         );
     }
   }
@@ -469,6 +475,30 @@ class TranscriptionService {
     } catch (e) {
       debugPrint('检查文件可用性失败: $e');
       return false;
+    }
+  }
+
+  /// 获取WhisperX模型信息
+  Future<Map<String, dynamic>> getWhisperXModelInfo() async {
+    try {
+      final response = await _dio.get(
+        '/model',
+        queryParameters: {'model': 'whisperx', 'action': 'models'},
+        options: Options(responseType: ResponseType.json),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      } else {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          message: '获取模型信息失败，状态码: ${response.statusCode}',
+        );
+      }
+    } on DioException catch (e) {
+      debugPrint('获取模型信息异常: ${e.message}');
+      rethrow;
     }
   }
 

@@ -90,6 +90,8 @@ PlayerConfig _$PlayerConfigFromJson(Map<String, dynamic> json) => PlayerConfig(
   volume: (json['volume'] as num?)?.toDouble() ?? 1.0,
   showWordHighlight: json['showWordHighlight'] as bool? ?? true,
   showSpeakerLabels: json['showSpeakerLabels'] as bool? ?? true,
+  delayedLyricsEnabled: json['delayedLyricsEnabled'] as bool? ?? false,
+  delayedLyricsDelay: (json['delayedLyricsDelay'] as num?)?.toDouble() ?? 3.0,
 );
 
 Map<String, dynamic> _$PlayerConfigToJson(PlayerConfig instance) =>
@@ -99,4 +101,6 @@ Map<String, dynamic> _$PlayerConfigToJson(PlayerConfig instance) =>
       'volume': instance.volume,
       'showWordHighlight': instance.showWordHighlight,
       'showSpeakerLabels': instance.showSpeakerLabels,
+      'delayedLyricsEnabled': instance.delayedLyricsEnabled,
+      'delayedLyricsDelay': instance.delayedLyricsDelay,
     };

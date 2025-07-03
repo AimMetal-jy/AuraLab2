@@ -19,6 +19,7 @@ class AudioItem {
   final int playCount;
   final bool isFavorite;
   final DateTime? lastPlayed;
+  final String? transcriptionResult; // ASR转录结果
 
   AudioItem({
     this.id,
@@ -32,10 +33,12 @@ class AudioItem {
     this.playCount = 0,
     this.isFavorite = false,
     this.lastPlayed,
+    this.transcriptionResult,
   });
 
   bool get isLocal => type == AudioType.local;
   bool get isTTS => type == AudioType.tts;
+  bool get isASR => type == AudioType.asr;
 
   // 用于创建副本并更新值
   AudioItem copyWith({
@@ -50,6 +53,7 @@ class AudioItem {
     int? playCount,
     bool? isFavorite,
     DateTime? lastPlayed,
+    String? transcriptionResult,
   }) {
     return AudioItem(
       id: id ?? this.id,
@@ -63,6 +67,7 @@ class AudioItem {
       playCount: playCount ?? this.playCount,
       isFavorite: isFavorite ?? this.isFavorite,
       lastPlayed: lastPlayed ?? this.lastPlayed,
+      transcriptionResult: transcriptionResult ?? this.transcriptionResult,
     );
   }
 
@@ -84,6 +89,7 @@ class AudioItem {
       lastPlayed: map['lastPlayed'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['lastPlayed'])
           : null,
+      transcriptionResult: map['transcriptionResult'],
     );
   }
 
@@ -101,6 +107,7 @@ class AudioItem {
       'playCount': playCount,
       'isFavorite': isFavorite ? 1 : 0,
       'lastPlayed': lastPlayed?.millisecondsSinceEpoch,
+      'transcriptionResult': transcriptionResult,
     };
   }
 }
@@ -109,6 +116,7 @@ class AudioItem {
 enum AudioType {
   local, // 本地音频文件
   tts, // TTS生成的音频
+  asr, // ASR转录音频
 }
 
 /// 音频库服务 (由数据库驱动)
@@ -129,9 +137,12 @@ class AudioLibraryService extends ChangeNotifier {
       _audioItems.where((item) => item.isTTS).toList();
   List<AudioItem> get localAudioItems =>
       _audioItems.where((item) => item.isLocal).toList();
+  List<AudioItem> get asrAudioItems =>
+      _audioItems.where((item) => item.isASR).toList();
   bool get isLoading => _isLoading;
   int get totalCount => _audioItems.length;
   int get ttsCount => ttsAudioItems.length;
+  int get asrCount => asrAudioItems.length;
 
   /// 从数据库和文件系统刷新整个音频库
   Future<void> refreshLibrary() async {
@@ -283,23 +294,23 @@ class AudioLibraryService extends ChangeNotifier {
   /// 搜索音频文件
   List<AudioItem> search(String query) {
     if (query.isEmpty) return _audioItems;
-    
+
     final lowerQuery = query.toLowerCase();
     return _audioItems.where((item) {
       return item.title.toLowerCase().contains(lowerQuery) ||
-             item.artist.toLowerCase().contains(lowerQuery);
+          item.artist.toLowerCase().contains(lowerQuery);
     }).toList();
   }
 
   /// 删除音频（通过ID）
   Future<void> removeAudio(int? itemId) async {
     if (itemId == null) return;
-    
+
     final item = _audioItems.firstWhere(
       (item) => item.id == itemId,
       orElse: () => throw Exception('音频项未找到'),
     );
-    
+
     await deleteAudioItem(item);
   }
 
@@ -325,12 +336,47 @@ class AudioLibraryService extends ChangeNotifier {
       final newItem = await _createTtsAudioItem(file);
       final dbItem = await _dbHelper.upsertAudioItem(newItem);
       _audioItems.add(dbItem);
-      
+
       _sortItems();
       notifyListeners();
       debugPrint('TTS音频已添加到库: ${newItem.title}');
     } catch (e) {
       debugPrint('添加TTS音频失败: $e');
+      rethrow;
+    }
+  }
+
+  /// 添加ASR音频文件
+  Future<void> addASRAudio(
+    String filePath,
+    String transcriptionResult, {
+    String? modelName,
+  }) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('文件不存在: $filePath');
+      }
+
+      // 检查数据库中是否已存在
+      if (await _dbHelper.getAudioItemByPath(filePath) != null) {
+        debugPrint('ASR文件已存在，跳过添加: $filePath');
+        return;
+      }
+
+      final newItem = await _createAsrAudioItem(
+        file,
+        transcriptionResult,
+        modelName,
+      );
+      final dbItem = await _dbHelper.upsertAudioItem(newItem);
+      _audioItems.add(dbItem);
+
+      _sortItems();
+      notifyListeners();
+      debugPrint('ASR音频已添加到库: ${newItem.title}');
+    } catch (e) {
+      debugPrint('添加ASR音频失败: $e');
       rethrow;
     }
   }
@@ -371,6 +417,29 @@ class AudioLibraryService extends ChangeNotifier {
       type: AudioType.local,
       createdAt: fileStats.modified,
       fileSize: fileStats.size,
+    );
+  }
+
+  Future<AudioItem> _createAsrAudioItem(
+    File file,
+    String transcriptionResult,
+    String? modelName,
+  ) async {
+    final fileName = path.basename(file.path);
+    final fileStats = await file.stat();
+    final titleWithoutExt = path.basenameWithoutExtension(fileName);
+    String artist = 'ASR转录';
+    if (modelName != null) {
+      artist = 'ASR转录 - $modelName';
+    }
+    return AudioItem(
+      title: titleWithoutExt,
+      artist: artist,
+      filePath: file.path,
+      type: AudioType.asr,
+      createdAt: fileStats.modified,
+      fileSize: fileStats.size,
+      transcriptionResult: transcriptionResult,
     );
   }
 
