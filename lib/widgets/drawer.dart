@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../screens/settings_page.dart';
 
 class TabsDrawer extends StatelessWidget {
@@ -19,6 +20,23 @@ class TabsDrawer extends StatelessWidget {
             ),
             child: null,
           ),
+          ListTile(
+            title: const Text("音频库"),
+            leading: const CircleAvatar(child: Icon(Icons.music_note)),
+            onTap: () {
+              Navigator.of(context).pop(); // 关闭抽屉
+            },
+          ),
+          const Divider(),
+          ListTile(
+            title: const Text("笔记"),
+            leading: const CircleAvatar(child: Icon(Icons.note)),
+            onTap: () {
+              Navigator.of(context).pop(); // 关闭抽屉
+              GoRouter.of(context).push('/notes');
+            },
+          ),
+          const Divider(),
           ListTile(
             title: const Text("系统设置"),
             leading: const CircleAvatar(child: Icon(Icons.settings)),
