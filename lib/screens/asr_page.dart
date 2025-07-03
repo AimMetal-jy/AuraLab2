@@ -486,8 +486,8 @@ class _AsrPageState extends State<AsrPage> {
                       children: [
                         Expanded(
                           child: RadioListTile<TranscriptionModel>(
-                            title: const Text('蓝心大模型'),
-                            subtitle: const Text('高精度中文转录'),
+                            title: const Text('蓝心小V'),
+                            subtitle: const Text('快速转录'),
                             value: TranscriptionModel.bluelm,
                             groupValue: _selectedModel,
                             onChanged: _isProcessing
@@ -588,11 +588,11 @@ class _AsrPageState extends State<AsrPage> {
                                 ),
                                 DropdownMenuItem(
                                   value: 'float16',
-                                  child: Text('float16'),
+                                  child: Text('精确'),
                                 ),
                                 DropdownMenuItem(
                                   value: 'int8',
-                                  child: Text('int8'),
+                                  child: Text('快速'),
                                 ),
                               ],
                             ),

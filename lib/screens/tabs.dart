@@ -3,8 +3,11 @@ import 'package:auralab_0701/widgets/drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:auralab_0701/screens/asr_page.dart';
 import 'package:auralab_0701/screens/tts/tts_page.dart';
+import 'package:auralab_0701/screens/vocabulary_book_page.dart';
+import 'package:auralab_0701/screens/translation_page.dart';
 import 'package:auralab_0701/widgets/music_bar.dart';
 import 'package:go_router/go_router.dart';
+
 class Tabs extends StatefulWidget {
   const Tabs({super.key});
 
@@ -13,10 +16,12 @@ class Tabs extends StatefulWidget {
 }
 
 class TabsState extends State<Tabs> {
-  int _currentIndex = 1;
+  int _currentIndex = 2;
   final List<Widget> _pages = [
-    TtsPage(),
+    VocabularyBookPage(),
+    TranslationPage(),
     HomePage(),
+    TtsPage(),
     AsrPage(),
   ];
   @override
@@ -24,7 +29,10 @@ class TabsState extends State<Tabs> {
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: Text("AuraLab", style: TextStyle(color: const Color.fromARGB(255, 0, 0, 0))),
+        title: Text(
+          "AuraLab",
+          style: TextStyle(color: const Color.fromARGB(255, 0, 0, 0)),
+        ),
         actions: [
           //IconButton(onPressed: () {}, icon: Icon(Icons.add)),
           IconButton(onPressed: () {}, icon: Icon(Icons.search)),
@@ -44,6 +52,7 @@ class TabsState extends State<Tabs> {
           ),
           // 底部导航栏
           BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
             currentIndex: _currentIndex,
             onTap: (index) {
               setState(() {
@@ -51,9 +60,17 @@ class TabsState extends State<Tabs> {
               });
             },
             items: [
-              BottomNavigationBarItem(icon: Icon(Icons.text_format), label: "文生音频"),//tts
+              BottomNavigationBarItem(icon: Icon(Icons.book), label: "生词本"),
+              BottomNavigationBarItem(icon: Icon(Icons.translate), label: "翻译"),
               BottomNavigationBarItem(icon: Icon(Icons.home), label: "主页"),
-              BottomNavigationBarItem(icon: Icon(Icons.audio_file), label: "音频转字"),//asr
+              BottomNavigationBarItem(
+                icon: Icon(Icons.text_format),
+                label: "文生音频",
+              ), //tts
+              BottomNavigationBarItem(
+                icon: Icon(Icons.audio_file),
+                label: "音频转字",
+              ), //asr
             ],
           ),
         ],
