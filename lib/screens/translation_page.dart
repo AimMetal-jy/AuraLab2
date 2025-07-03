@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../services/translation_service.dart';
+import '../widgets/custom_toast.dart';
+import '../models/translation_practice.dart';
+import 'translation_practice_page.dart';
 
 class TranslationPage extends StatefulWidget {
   const TranslationPage({super.key});
@@ -14,9 +19,8 @@ class _TranslationPageState extends State<TranslationPage> {
   String _targetLanguage = 'zh';
   bool _isTranslating = false;
 
-  final List<Map<String, String>> _history = [];
-
-  final Map<String, String> _languages = {
+  final List<TranslationHistory> _history = [];
+  Map<String, String> _languages = {
     'en': '英语',
     'zh': '中文',
     'ja': '日语',
@@ -28,6 +32,23 @@ class _TranslationPageState extends State<TranslationPage> {
     'ru': '俄语',
     'ar': '阿拉伯语',
   };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSupportedLanguages();
+  }
+
+  Future<void> _loadSupportedLanguages() async {
+    try {
+      final languages = await TranslationService.getSupportedLanguages();
+      setState(() {
+        _languages = languages;
+      });
+    } catch (e) {
+      debugPrint('加载语言列表失败: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +127,56 @@ class _TranslationPageState extends State<TranslationPage> {
               ],
             ),
           ),
+          // 翻译练习区域
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.school, color: Colors.blue, size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '翻译练习',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () {
+                        // 查看更多练习
+                        CustomToast.show(
+                          context,
+                          message: '更多练习功能开发中',
+                          type: ToastType.info,
+                        );
+                      },
+                      child: const Text('查看更多'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 120,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount:
+                        TranslationPracticeService.getAllPractices().length,
+                    itemBuilder: (context, index) {
+                      final practice =
+                          TranslationPracticeService.getAllPractices()[index];
+                      return _buildPracticeCard(practice);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
           // 翻译输入区域
           Expanded(
             child: SingleChildScrollView(
@@ -140,7 +211,7 @@ class _TranslationPageState extends State<TranslationPage> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                _languages[_sourceLanguage]!,
+                                _languages[_sourceLanguage] ?? '未知语言',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -150,11 +221,12 @@ class _TranslationPageState extends State<TranslationPage> {
                               const Spacer(),
                               IconButton(
                                 icon: const Icon(
-                                  Icons.volume_up,
-                                  color: Colors.blue,
+                                  Icons.clear,
+                                  color: Colors.grey,
                                 ),
                                 onPressed: () {
-                                  // TODO: 播放源语言发音
+                                  _sourceController.clear();
+                                  _targetController.clear();
                                 },
                               ),
                             ],
@@ -233,7 +305,7 @@ class _TranslationPageState extends State<TranslationPage> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                _languages[_targetLanguage]!,
+                                _languages[_targetLanguage] ?? '未知语言',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -243,20 +315,13 @@ class _TranslationPageState extends State<TranslationPage> {
                               const Spacer(),
                               IconButton(
                                 icon: const Icon(
-                                  Icons.volume_up,
-                                  color: Colors.green,
-                                ),
-                                onPressed: () {
-                                  // TODO: 播放翻译结果发音
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(
                                   Icons.copy,
                                   color: Colors.grey,
                                 ),
                                 onPressed: () {
-                                  // TODO: 复制翻译结果
+                                  if (_targetController.text.isNotEmpty) {
+                                    _copyToClipboard(_targetController.text);
+                                  }
                                 },
                               ),
                             ],
@@ -280,30 +345,55 @@ class _TranslationPageState extends State<TranslationPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // 历史记录按钮
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          _showHistoryDialog();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey[300],
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                    // 功能按钮行
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              _showHistoryDialog();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.grey[300],
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.history),
+                                SizedBox(width: 8),
+                                Text('翻译历史'),
+                              ],
+                            ),
                           ),
                         ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.history),
-                            SizedBox(width: 8),
-                            Text('翻译历史'),
-                          ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _clearHistory,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red[100],
+                              foregroundColor: Colors.red[700],
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.clear_all),
+                                SizedBox(width: 8),
+                                Text('清除历史'),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -316,92 +406,304 @@ class _TranslationPageState extends State<TranslationPage> {
     );
   }
 
+  Widget _buildPracticeCard(TranslationPractice practice) {
+    return Container(
+      width: 160,
+      margin: const EdgeInsets.only(right: 12),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) =>
+                    TranslationPracticePage(practice: practice),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      practice.iconPath,
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        practice.title,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  practice.description,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const Spacer(),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getPracticeColorFromString(
+                          practice.thumbnailColor,
+                        ).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        practice.difficulty,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: _getPracticeColorFromString(
+                            practice.thumbnailColor,
+                          ),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${practice.exercises.length}题',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getPracticeColorFromString(String colorString) {
+    switch (colorString.toLowerCase()) {
+      case 'blue':
+        return Colors.blue;
+      case 'green':
+        return Colors.green;
+      case 'orange':
+        return Colors.orange;
+      case 'purple':
+        return Colors.purple;
+      case 'red':
+        return Colors.red;
+      default:
+        return Colors.blue;
+    }
+  }
+
   void _translate() async {
-    if (_sourceController.text.isEmpty) return;
+    if (_sourceController.text.trim().isEmpty) {
+      CustomToast.show(context, message: '请输入要翻译的文本', type: ToastType.error);
+      return;
+    }
 
     setState(() {
       _isTranslating = true;
     });
 
-    // 模拟翻译过程
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final result = await TranslationService.translate(
+        text: _sourceController.text.trim(),
+        fromLanguage: _sourceLanguage,
+        toLanguage: _targetLanguage,
+      );
 
-    // 这里应该调用实际的翻译API
-    String translatedText = _mockTranslate(
-      _sourceController.text,
-      _sourceLanguage,
-      _targetLanguage,
-    );
+      if (result.success && result.translation != null) {
+        setState(() {
+          _targetController.text = result.translation!;
 
-    setState(() {
-      _targetController.text = translatedText;
-      _isTranslating = false;
+          // 添加到历史记录
+          final history = TranslationHistory(
+            originalText: _sourceController.text.trim(),
+            translatedText: result.translation!,
+            fromLanguage: _sourceLanguage,
+            toLanguage: _targetLanguage,
+            timestamp: DateTime.now(),
+          );
+          _history.insert(0, history);
 
-      // 添加到历史记录
-      _history.insert(0, {
-        'source': _sourceController.text,
-        'target': translatedText,
-        'sourceLang': _sourceLanguage,
-        'targetLang': _targetLanguage,
-        'timestamp': DateTime.now().toIso8601String(),
+          // 限制历史记录数量
+          if (_history.length > 100) {
+            _history.removeRange(100, _history.length);
+          }
+        });
+
+        if (mounted) {
+          CustomToast.show(context, message: '翻译成功', type: ToastType.success);
+        }
+      } else {
+        if (mounted) {
+          CustomToast.show(
+            context,
+            message: result.message,
+            type: ToastType.error,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        CustomToast.show(context, message: '翻译失败: $e', type: ToastType.error);
+      }
+    } finally {
+      setState(() {
+        _isTranslating = false;
       });
-    });
+    }
   }
 
-  String _mockTranslate(String text, String from, String to) {
-    // 这是一个模拟翻译函数，实际应该调用翻译API
-    if (from == 'en' && to == 'zh') {
-      return '这是一个模拟翻译结果：$text';
-    } else if (from == 'zh' && to == 'en') {
-      return 'This is a mock translation result: $text';
-    } else {
-      return '[翻译结果] $text';
-    }
+  void _copyToClipboard(String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    CustomToast.show(context, message: '已复制到剪贴板', type: ToastType.success);
+  }
+
+  void _clearHistory() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('清除历史记录'),
+        content: const Text('确定要清除所有翻译历史记录吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _history.clear();
+              });
+              Navigator.of(context).pop();
+              CustomToast.show(
+                context,
+                message: '历史记录已清除',
+                type: ToastType.success,
+              );
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showHistoryDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('翻译历史'),
+        title: Row(
+          children: [
+            const Icon(Icons.history),
+            const SizedBox(width: 8),
+            const Text('翻译历史'),
+            const Spacer(),
+            Text(
+              '${_history.length} 条记录',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+                fontWeight: FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
         content: SizedBox(
           width: double.maxFinite,
           height: 400,
           child: _history.isEmpty
-              ? const Center(child: Text('暂无翻译历史'))
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.history, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        '暂无翻译历史',
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                )
               : ListView.builder(
                   itemCount: _history.length,
                   itemBuilder: (context, index) {
                     final item = _history[index];
                     return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
-                        title: Text(item['source']!),
+                        title: Text(
+                          item.originalText,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const SizedBox(height: 4),
                             Text(
-                              item['target']!,
+                              item.translatedText,
                               style: const TextStyle(color: Colors.blue),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              '${_languages[item['sourceLang']!]} → ${_languages[item['targetLang']!]}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
+                            Row(
+                              children: [
+                                Text(
+                                  '${_languages[item.fromLanguage] ?? item.fromLanguage} → ${_languages[item.toLanguage] ?? item.toLanguage}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  _formatTimestamp(item.timestamp),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                         onTap: () {
-                          _sourceController.text = item['source']!;
-                          _targetController.text = item['target']!;
-                          _sourceLanguage = item['sourceLang']!;
-                          _targetLanguage = item['targetLang']!;
+                          _sourceController.text = item.originalText;
+                          _targetController.text = item.translatedText;
+                          _sourceLanguage = item.fromLanguage;
+                          _targetLanguage = item.toLanguage;
                           setState(() {});
                           Navigator.of(context).pop();
                         },
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () {
+                            setState(() {
+                              _history.removeAt(index);
+                            });
+                          },
+                        ),
                       ),
                     );
                   },
@@ -415,6 +717,21 @@ class _TranslationPageState extends State<TranslationPage> {
         ],
       ),
     );
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+
+    if (diff.inDays > 0) {
+      return '${diff.inDays}天前';
+    } else if (diff.inHours > 0) {
+      return '${diff.inHours}小时前';
+    } else if (diff.inMinutes > 0) {
+      return '${diff.inMinutes}分钟前';
+    } else {
+      return '刚刚';
+    }
   }
 
   @override

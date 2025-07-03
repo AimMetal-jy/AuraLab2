@@ -10,7 +10,7 @@ import '../services/background_task_service.dart';
 import '../models/transcription_model.dart';
 import '../widgets/music_player/music_player.dart';
 import '../widgets/background_task_panel.dart';
-import '../screens/huggingface_config_page.dart';
+
 import '../widgets/custom_toast.dart';
 
 class AsrPage extends StatefulWidget {
@@ -209,7 +209,7 @@ class _AsrPageState extends State<AsrPage> {
     }).toList();
   }
 
-  /// 构建模型下拉选项
+  /// 构建模型下拉选项（展开时显示详细信息）
   List<DropdownMenuItem<String>> _buildModelDropdownItems() {
     if (_modelInfo == null || _modelInfo!['data'] == null) {
       // 如果模型信息未加载，返回基本选项
@@ -231,29 +231,52 @@ class _AsrPageState extends State<AsrPage> {
       final modelInfo = entry.value as Map<String, dynamic>;
       final description = modelInfo['description'] ?? '';
       final parameters = modelInfo['parameters'] ?? '';
-      final speed = modelInfo['relative_speed'] ?? '';
 
       return DropdownMenuItem<String>(
         value: modelName,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '$modelName ($parameters)',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Text(
-              description,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            Text(
-              '速度: $speed',
-              style: const TextStyle(fontSize: 11, color: Colors.blue),
-            ),
-          ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$modelName ($parameters)',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                description,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
         ),
       );
+    }).toList();
+  }
+
+  /// 构建选中项的简洁显示（未展开时显示）
+  List<Widget> _buildSelectedItemWidgets() {
+    if (_modelInfo == null || _modelInfo!['data'] == null) {
+      // 如果模型信息未加载，返回基本显示
+      return ['tiny', 'base', 'small', 'medium', 'large', 'turbo'].map((
+        modelName,
+      ) {
+        return Text(modelName, style: const TextStyle(fontSize: 14));
+      }).toList();
+    }
+
+    final supportedModels =
+        _modelInfo!['data']['supported_models'] as Map<String, dynamic>? ?? {};
+
+    return supportedModels.entries.map((entry) {
+      final modelName = entry.key;
+
+      return Text(modelName, style: const TextStyle(fontSize: 14));
     }).toList();
   }
 
@@ -504,13 +527,6 @@ class _AsrPageState extends State<AsrPage> {
         title: const Text("音频转字"),
         automaticallyImplyLeading: true,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'HuggingFace 配置',
-            onPressed: () => _openHuggingFaceConfig(),
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -748,6 +764,9 @@ class _AsrPageState extends State<AsrPage> {
                                       });
                                     },
                               items: _buildModelDropdownItems(),
+                              selectedItemBuilder: (BuildContext context) {
+                                return _buildSelectedItemWidgets();
+                              },
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1511,18 +1530,6 @@ class _AsrPageState extends State<AsrPage> {
     return filteredFiles;
   }
 
-  /// 打开HuggingFace配置页面
-  Future<void> _openHuggingFaceConfig() async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (context) => const AIModelConfigPage()),
-    );
-
-    if (result == true) {
-      // 配置已更新，显示成功提示
-      _showStatusSnackBar('HuggingFace 配置已更新');
-    }
-  }
-
   /// 显示说话人识别需要Token的对话框
   void _showSpeakerDiarizationTokenDialog() {
     showDialog(
@@ -1537,20 +1544,13 @@ class _AsrPageState extends State<AsrPage> {
         ),
         content: const Text(
           '说话人识别功能需要 HuggingFace Token 才能使用。\n\n'
-          '请先配置您的 HuggingFace Token，'
+          '请前往主页左侧菜单的"系统设置"页面配置您的 HuggingFace Token，'
           '并确保已获取 pyannote 模型的使用许可。',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              await _openHuggingFaceConfig();
-            },
-            child: const Text('去配置'),
+            child: const Text('我知道了'),
           ),
         ],
       ),
