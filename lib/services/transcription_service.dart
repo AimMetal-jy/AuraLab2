@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../models/transcription_model.dart';
+import '../services/bluelm_config_service.dart';
 
 class TranscriptionService {
   static const String baseUrl = 'http://127.0.0.1:8888';
@@ -37,12 +38,20 @@ class TranscriptionService {
     try {
       debugPrint('提交蓝心大模型转录任务: ${audioFile.path}');
 
+      // 获取蓝心大模型配置
+      final blueLMConfig = await BlueLMConfigService.getConfig();
+      final appId = blueLMConfig['app_id'];
+      final appKey = blueLMConfig['app_key'];
+
       // 创建表单数据
       final formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(
           audioFile.path,
           filename: audioFile.path.split('/').last,
         ),
+        // 添加蓝心大模型配置（如果有的话）
+        if (appId != null) 'app_id': appId,
+        if (appKey != null) 'app_key': appKey,
       });
 
       // 发送POST请求
@@ -77,12 +86,14 @@ class TranscriptionService {
   /// [computeType] 计算类型（可选）
   /// [enableWordTimestamps] 是否生成单词级时间戳（可选）
   /// [enableSpeakerDiarization] 是否进行说话人识别（可选）
+  /// [huggingFaceToken] HuggingFace Token（可选，说话人识别需要）
   Future<TranscriptionSubmitResponse> submitWhisperXTask(
     File audioFile, {
     String? language,
     String? computeType,
     bool? enableWordTimestamps,
     bool? enableSpeakerDiarization,
+    String? huggingFaceToken,
   }) async {
     try {
       debugPrint('提交WhisperX转录任务: ${audioFile.path}');
@@ -99,6 +110,7 @@ class TranscriptionService {
           'enable_word_timestamps': enableWordTimestamps.toString(),
         if (enableSpeakerDiarization != null)
           'enable_speaker_diarization': enableSpeakerDiarization.toString(),
+        if (huggingFaceToken != null) 'huggingface_token': huggingFaceToken,
       });
 
       // 发送POST请求到统一接口
@@ -326,6 +338,7 @@ class TranscriptionService {
   /// [computeType] 计算类型（仅WhisperX使用）
   /// [enableWordTimestamps] 是否生成单词级时间戳（仅WhisperX使用）
   /// [enableSpeakerDiarization] 是否进行说话人识别（仅WhisperX使用）
+  /// [huggingFaceToken] HuggingFace Token（仅WhisperX说话人识别使用）
   Future<TranscriptionSubmitResponse> submitTranscriptionTask(
     File audioFile,
     TranscriptionModel model, {
@@ -333,6 +346,7 @@ class TranscriptionService {
     String? computeType,
     bool? enableWordTimestamps,
     bool? enableSpeakerDiarization,
+    String? huggingFaceToken,
   }) async {
     switch (model) {
       case TranscriptionModel.bluelm:
@@ -344,6 +358,7 @@ class TranscriptionService {
           computeType: computeType,
           enableWordTimestamps: enableWordTimestamps,
           enableSpeakerDiarization: enableSpeakerDiarization,
+          huggingFaceToken: huggingFaceToken,
         );
     }
   }

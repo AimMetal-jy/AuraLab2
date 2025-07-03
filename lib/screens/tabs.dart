@@ -5,7 +5,7 @@ import 'package:auralab_0701/screens/asr_page.dart';
 import 'package:auralab_0701/screens/tts/tts_page.dart';
 import 'package:auralab_0701/screens/vocabulary_book_page.dart';
 import 'package:auralab_0701/screens/translation_page.dart';
-import 'package:auralab_0701/widgets/music_bar.dart';
+import 'package:auralab_0701/widgets/music_player/music_player.dart';
 import 'package:go_router/go_router.dart';
 
 class Tabs extends StatefulWidget {
@@ -45,7 +45,7 @@ class TabsState extends State<Tabs> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // 全局音乐播放器横条
-          MusicBar(
+          MiniPlayer(
             onTap: () {
               context.push('/music-player');
             },

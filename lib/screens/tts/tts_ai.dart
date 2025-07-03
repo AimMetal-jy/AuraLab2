@@ -5,6 +5,8 @@ import 'package:auralab_0701/models/chat_message.dart';
 import 'package:auralab_0701/services/tts_selection_service.dart';
 import 'package:auralab_0701/screens/tts/tts_processing.dart';
 
+import 'package:auralab_0701/widgets/custom_toast.dart';
+
 class TtsSenderWithAI extends StatefulWidget {
   const TtsSenderWithAI({super.key});
 
@@ -198,17 +200,13 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                         padding: EdgeInsets.only(left: 30), // 与消息对齐
                         child: TextButton.icon(
                           onPressed: () async {
-                            final scaffoldMessenger = ScaffoldMessenger.of(
-                              context,
-                            );
-                            scaffoldMessenger.removeCurrentSnackBar();
+                            final currentContext = context;
                             await _selectionService.addText(message.content);
-                            if (mounted) {
-                              scaffoldMessenger.showSnackBar(
-                                SnackBar(
-                                  content: Text('已添加到待选区'),
-                                  duration: Duration(seconds: 1),
-                                ),
+                            if (mounted && currentContext.mounted) {
+                              CustomToast.show(
+                                currentContext,
+                                message: '已添加到待选区',
+                                type: ToastType.success,
                               );
                               setState(() {}); // 更新UI以显示徽章数量
                             }
@@ -258,12 +256,6 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                       onPressed: () async {
                         if (textEditingController.text.isNotEmpty) {
                           final userMessage = textEditingController.text;
-                          final scaffoldMessenger = ScaffoldMessenger.of(
-                            context,
-                          );
-                          final errorColor = Theme.of(
-                            context,
-                          ).colorScheme.error;
 
                           // 立即清空输入框
                           textEditingController.clear();
@@ -337,15 +329,18 @@ class TtsSenderWithAIState extends State<TtsSenderWithAI> {
                                 messages.removeLast();
                               });
                             }
-                            scaffoldMessenger.removeCurrentSnackBar();
-                            scaffoldMessenger.showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  '处理失败: ${e.toString().replaceAll('Exception: ', '')}',
-                                ),
-                                backgroundColor: errorColor,
-                              ),
-                            );
+
+                            if (mounted) {
+                              final currentErrorContext = context;
+                              if (currentErrorContext.mounted) {
+                                CustomToast.show(
+                                  currentErrorContext,
+                                  message:
+                                      '处理失败: ${e.toString().replaceAll('Exception: ', '')}',
+                                  type: ToastType.error,
+                                );
+                              }
+                            }
                           } finally {
                             setState(() {
                               isLoading = false;

@@ -6,6 +6,7 @@ import '../services/audio_player_service.dart';
 import '../services/audio_library_service.dart';
 import '../config/performance_config.dart';
 import 'dart:io';
+import '../widgets/custom_toast.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -86,11 +87,11 @@ class HomePageState extends State<HomePage>
                     Row(
                       children: [
                         // TTS快速入口
-                        TextButton.icon(
-                          onPressed: () => context.push('/tts-processing'),
-                          icon: const Icon(Icons.record_voice_over),
-                          label: const Text('TTS处理'),
-                        ),
+                        // TextButton.icon(
+                        //   onPressed: () => context.push('/tts-processing'),
+                        //   icon: const Icon(Icons.record_voice_over),
+                        //   label: const Text('TTS处理'),
+                        // ),
                         const SizedBox(width: 8),
                         // 刷新按钮
                         IconButton(
@@ -415,15 +416,13 @@ class HomePageState extends State<HomePage>
     }
   }
 
-  // 显示 SnackBar 的辅助函数
+  // 显示通知的辅助函数
   void _showSnackBar(String message, {bool isError = false}) {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    scaffoldMessenger.removeCurrentSnackBar();
-    scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
-      ),
+    if (!mounted) return;
+    CustomToast.show(
+      context,
+      message: message,
+      type: isError ? ToastType.error : ToastType.success,
     );
   }
 

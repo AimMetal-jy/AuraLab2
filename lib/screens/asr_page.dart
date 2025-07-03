@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/transcription_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/huggingface_token_service.dart';
 import '../models/transcription_model.dart';
-
-import '../screens/audio_lyrics_player_page.dart';
+import '../widgets/music_player/music_player.dart';
+import '../screens/huggingface_config_page.dart';
+import '../widgets/custom_toast.dart';
 
 class AsrPage extends StatefulWidget {
   const AsrPage({super.key});
@@ -97,6 +99,16 @@ class _AsrPageState extends State<AsrPage> {
       return;
     }
 
+    // 检查说话人识别功能是否需要HuggingFace Token
+    if (_selectedModel == TranscriptionModel.whisperx &&
+        _enableSpeakerDiarization) {
+      final hasToken = await HuggingFaceTokenService.hasToken();
+      if (!hasToken) {
+        _showSpeakerDiarizationTokenDialog();
+        return;
+      }
+    }
+
     setState(() {
       _isProcessing = true;
       _transcriptionResult = null;
@@ -105,6 +117,13 @@ class _AsrPageState extends State<AsrPage> {
     });
 
     try {
+      // 获取HuggingFace Token（如果需要说话人识别）
+      String? huggingFaceToken;
+      if (_selectedModel == TranscriptionModel.whisperx &&
+          _enableSpeakerDiarization) {
+        huggingFaceToken = await HuggingFaceTokenService.getToken();
+      }
+
       TranscriptionSubmitResponse response = await _transcriptionService
           .submitTranscriptionTask(
             _selectedAudioFile!,
@@ -118,6 +137,7 @@ class _AsrPageState extends State<AsrPage> {
                 _selectedModel == TranscriptionModel.whisperx
                 ? _enableSpeakerDiarization
                 : null,
+            huggingFaceToken: huggingFaceToken,
           );
 
       setState(() {
@@ -407,6 +427,13 @@ class _AsrPageState extends State<AsrPage> {
         title: const Text("音频转字"),
         automaticallyImplyLeading: true,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'HuggingFace 配置',
+            onPressed: () => _openHuggingFaceConfig(),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -761,7 +788,7 @@ class _AsrPageState extends State<AsrPage> {
                         Wrap(
                           spacing: 8,
                           runSpacing: 4,
-                          children: _availableFiles.map((file) {
+                          children: _getFilteredAvailableFiles().map((file) {
                             IconData icon;
                             String label;
                             Color color;
@@ -780,7 +807,7 @@ class _AsrPageState extends State<AsrPage> {
                               case 'speaker_segments':
                               case 'diarization':
                                 icon = Icons.people;
-                                label = '说话人分离';
+                                label = '说话人识别';
                                 color = Colors.orange;
                                 break;
                               default:
@@ -934,13 +961,13 @@ class _AsrPageState extends State<AsrPage> {
                           const Spacer(),
                           TextButton.icon(
                             onPressed: () async {
-                              final scaffoldMessenger = ScaffoldMessenger.of(
-                                context,
-                              );
+                              final currentContext = context;
                               await _loadTaskHistory();
-                              if (mounted) {
-                                scaffoldMessenger.showSnackBar(
-                                  const SnackBar(content: Text('任务历史已刷新')),
+                              if (mounted && currentContext.mounted) {
+                                CustomToast.show(
+                                  currentContext,
+                                  message: '任务历史已刷新',
+                                  type: ToastType.info,
                                 );
                               }
                             },
@@ -976,8 +1003,6 @@ class _AsrPageState extends State<AsrPage> {
                                 task.status == TranscriptionStatus.completed
                                 ? IconButton(
                                     onPressed: () async {
-                                      final scaffoldMessenger =
-                                          ScaffoldMessenger.of(context);
                                       final currentContext = context;
                                       try {
                                         String result =
@@ -1011,11 +1036,11 @@ class _AsrPageState extends State<AsrPage> {
                                           );
                                         }
                                       } catch (e) {
-                                        if (mounted) {
-                                          scaffoldMessenger.showSnackBar(
-                                            SnackBar(
-                                              content: Text('下载结果失败: $e'),
-                                            ),
+                                        if (mounted && currentContext.mounted) {
+                                          CustomToast.show(
+                                            currentContext,
+                                            message: '下载结果失败: $e',
+                                            type: ToastType.error,
                                           );
                                         }
                                       }
@@ -1138,8 +1163,10 @@ class _AsrPageState extends State<AsrPage> {
         // 打开全屏播放器
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) =>
-                AudioLyricsPlayerPage(audioData: audioPlayData),
+            builder: (context) => UnifiedPlayerPage(
+              audioData: audioPlayData,
+              isTranscriptionAudio: true,
+            ),
           ),
         );
       }
@@ -1331,12 +1358,69 @@ class _AsrPageState extends State<AsrPage> {
   // 显示状态通知的辅助函数
   void _showStatusSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    scaffoldMessenger.removeCurrentSnackBar();
-    scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
+    CustomToast.show(
+      context,
+      message: message,
+      type: isError ? ToastType.error : ToastType.success,
+    );
+  }
+
+  /// 获取过滤后的可用文件列表
+  /// speaker_segments 和 diarization 成对出现时只显示一个
+  List<String> _getFilteredAvailableFiles() {
+    List<String> filteredFiles = List.from(_availableFiles);
+
+    // 如果同时存在 speaker_segments 和 diarization，只保留 diarization
+    if (filteredFiles.contains('speaker_segments') &&
+        filteredFiles.contains('diarization')) {
+      filteredFiles.remove('speaker_segments');
+    }
+
+    return filteredFiles;
+  }
+
+  /// 打开HuggingFace配置页面
+  Future<void> _openHuggingFaceConfig() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (context) => const AIModelConfigPage()),
+    );
+
+    if (result == true) {
+      // 配置已更新，显示成功提示
+      _showStatusSnackBar('HuggingFace 配置已更新');
+    }
+  }
+
+  /// 显示说话人识别需要Token的对话框
+  void _showSpeakerDiarizationTokenDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            const SizedBox(width: 8),
+            const Text('需要配置 Token'),
+          ],
+        ),
+        content: const Text(
+          '说话人识别功能需要 HuggingFace Token 才能使用。\n\n'
+          '请先配置您的 HuggingFace Token，'
+          '并确保已获取 pyannote 模型的使用许可。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _openHuggingFaceConfig();
+            },
+            child: const Text('去配置'),
+          ),
+        ],
       ),
     );
   }

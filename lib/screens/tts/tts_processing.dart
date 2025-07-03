@@ -5,6 +5,8 @@ import 'package:auralab_0701/services/audio_player_service.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 
+import '../../widgets/custom_toast.dart';
+
 class TtsProcessingPage extends StatefulWidget {
   const TtsProcessingPage({super.key});
 
@@ -34,13 +36,10 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
   // 显示 SnackBar 的辅助函数
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    scaffoldMessenger.removeCurrentSnackBar();
-    scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
-      ),
+    CustomToast.show(
+      context,
+      message: message,
+      type: isError ? ToastType.error : ToastType.success,
     );
   }
 
@@ -514,7 +513,7 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
           ElevatedButton(
             onPressed: () async {
               final navigator = Navigator.of(context);
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
+              final currentContext = context;
               navigator.pop();
               try {
                 await _selectionService.clearAll();
@@ -526,9 +525,11 @@ class TtsProcessingPageState extends State<TtsProcessingPage>
                   });
                 }
               } catch (e) {
-                if (mounted) {
-                  scaffoldMessenger.showSnackBar(
-                    SnackBar(content: Text('清空失败: $e')),
+                if (mounted && currentContext.mounted) {
+                  CustomToast.show(
+                    currentContext,
+                    message: '清空失败: $e',
+                    type: ToastType.error,
                   );
                 }
               }
