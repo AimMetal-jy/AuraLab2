@@ -7,10 +7,15 @@ import 'package:auralab_0701/screens/music_player_page.dart';
 import 'package:auralab_0701/models/note_model.dart';
 import 'package:auralab_0701/screens/note_list_page.dart';
 import 'package:auralab_0701/screens/note_edit_page.dart';
+import 'package:auralab_0701/screens/home.dart';
 
 final router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (context, state) => Tabs()),
+    GoRoute(
+      path: '/audio-library',
+      builder: (context, state) => const HomePage(),
+    ),
     GoRoute(path: '/tts', builder: (context, state) => const TtsPage()),
     GoRoute(
       path: '/tts-processing',
@@ -21,10 +26,7 @@ final router = GoRouter(
       path: '/music-player',
       builder: (context, state) => MusicPlayerPage(audioData: state.extra),
     ),
-    GoRoute(
-      path: '/notes',
-      builder: (context, state) => const NoteListPage(),
-    ),
+    GoRoute(path: '/notes', builder: (context, state) => const NoteListPage()),
     GoRoute(
       path: '/note-edit',
       builder: (context, state) => NoteEditPage(note: state.extra as Note?),

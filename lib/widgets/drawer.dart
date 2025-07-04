@@ -25,6 +25,9 @@ class TabsDrawer extends StatelessWidget {
             leading: const CircleAvatar(child: Icon(Icons.music_note)),
             onTap: () {
               Navigator.of(context).pop(); // 关闭抽屉
+              GoRouter.of(
+                context,
+              ).pushReplacement('/audio-library'); // 使用pushReplacement
             },
           ),
           const Divider(),
@@ -33,7 +36,9 @@ class TabsDrawer extends StatelessWidget {
             leading: const CircleAvatar(child: Icon(Icons.note)),
             onTap: () {
               Navigator.of(context).pop(); // 关闭抽屉
-              GoRouter.of(context).push('/notes');
+              GoRouter.of(
+                context,
+              ).pushReplacement('/notes'); // 使用pushReplacement
             },
           ),
           const Divider(),

@@ -1,4 +1,3 @@
-import 'package:auralab_0701/screens/home.dart';
 import 'package:auralab_0701/widgets/drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:auralab_0701/screens/asr_page.dart';
@@ -10,6 +9,7 @@ import 'package:auralab_0701/widgets/music_player/floating_mini_player.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:auralab_0701/services/background_task_service.dart';
+import 'package:auralab_0701/screens/note_list_page.dart';
 
 class Tabs extends StatefulWidget {
   const Tabs({super.key});
@@ -23,7 +23,7 @@ class TabsState extends State<Tabs> {
   final List<Widget> _pages = [
     VocabularyBookPage(),
     TranslationPage(),
-    HomePage(),
+    NoteListPage(showAppBar: false),
     TtsPage(),
     AsrPage(),
   ];
@@ -43,6 +43,45 @@ class TabsState extends State<Tabs> {
     });
   }
 
+  String _getAppBarTitle() {
+    switch (_currentIndex) {
+      case 0:
+        return "生词本";
+      case 1:
+        return "翻译";
+      case 2:
+        return "笔记";
+      case 3:
+        return "文生音频";
+      case 4:
+        return "音频转字";
+      default:
+        return "AuraLab";
+    }
+  }
+
+  List<Widget> _getAppBarActions() {
+    switch (_currentIndex) {
+      case 2: // 笔记页面
+        return [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              // TODO: Implement search functionality
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.sort),
+            onPressed: () {
+              // TODO: Implement sort functionality
+            },
+          ),
+        ];
+      default:
+        return [IconButton(onPressed: () {}, icon: Icon(Icons.search))];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -52,13 +91,10 @@ class TabsState extends State<Tabs> {
           appBar: AppBar(
             centerTitle: true,
             title: Text(
-              "AuraLab",
+              _getAppBarTitle(),
               style: TextStyle(color: const Color.fromARGB(255, 0, 0, 0)),
             ),
-            actions: [
-              //IconButton(onPressed: () {}, icon: Icon(Icons.add)),
-              IconButton(onPressed: () {}, icon: Icon(Icons.search)),
-            ],
+            actions: _getAppBarActions(),
           ),
           body: _pages[_currentIndex],
           drawer: TabsDrawer(),

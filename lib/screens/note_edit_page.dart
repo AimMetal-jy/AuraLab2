@@ -12,8 +12,9 @@ import '../widgets/custom_toast.dart';
 
 class NoteEditPage extends StatefulWidget {
   final Note? note;
+  final String? initialContent;
 
-  const NoteEditPage({super.key, this.note});
+  const NoteEditPage({super.key, this.note, this.initialContent});
 
   @override
   NoteEditPageState createState() => NoteEditPageState();
@@ -32,7 +33,9 @@ class NoteEditPageState extends State<NoteEditPage> {
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.note?.title ?? '');
-    _contentController = TextEditingController(text: widget.note?.content ?? '');
+    _contentController = TextEditingController(
+      text: widget.note?.content ?? widget.initialContent ?? '',
+    );
     _isMarkdown = widget.note?.isMarkdown ?? false;
     _images = widget.note?.images ?? [];
   }
@@ -60,11 +63,7 @@ class NoteEditPageState extends State<NoteEditPage> {
       }
 
       if (!mounted) return;
-      CustomToast.show(
-        context,
-        message: '笔记保存成功',
-        type: ToastType.success,
-      );
+      CustomToast.show(context, message: '笔记保存成功', type: ToastType.success);
       if (!mounted) return;
       Navigator.of(context).pop();
     }
@@ -81,21 +80,13 @@ class NoteEditPageState extends State<NoteEditPage> {
           _images.add(pickedFile.path);
           _contentController.text += '\n![image]($imageUri)\n';
         });
-        
+
         if (!mounted) return;
-        CustomToast.show(
-          context,
-          message: '图片插入成功',
-          type: ToastType.success,
-        );
+        CustomToast.show(context, message: '图片插入成功', type: ToastType.success);
       }
     } catch (e) {
       if (!mounted) return;
-      CustomToast.show(
-        context,
-        message: '图片插入失败：$e',
-        type: ToastType.error,
-      );
+      CustomToast.show(context, message: '图片插入失败：$e', type: ToastType.error);
     }
   }
 
@@ -113,14 +104,8 @@ class NoteEditPageState extends State<NoteEditPage> {
               });
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.image),
-            onPressed: _pickImage,
-          ),
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _saveNote,
-          ),
+          IconButton(icon: const Icon(Icons.image), onPressed: _pickImage),
+          IconButton(icon: const Icon(Icons.save), onPressed: _saveNote),
         ],
       ),
       body: Padding(
@@ -132,34 +117,39 @@ class NoteEditPageState extends State<NoteEditPage> {
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(labelText: '标题'),
-                validator: (value) =>
-                    value!.isEmpty ? '标题不能为空' : null,
+                validator: (value) => value!.isEmpty ? '标题不能为空' : null,
               ),
               Expanded(
                 child: _showPreview
                     ? Markdown(
                         data: _contentController.text,
-                        imageBuilder: (uri, title, alt) {
+                        imageBuilder: (Uri uri, String? title, String? alt) {
                           if (uri.scheme == 'http' || uri.scheme == 'https') {
                             return Image.network(
                               uri.toString(),
                               width: 300,
                               height: 200,
                               fit: BoxFit.cover,
-                              loadingBuilder: (context, child, loadingProgress) {
-                                if (loadingProgress == null) return child;
-                                return Container(
-                                  width: 300,
-                                  height: 200,
-                                  alignment: Alignment.center,
-                                  child: CircularProgressIndicator(
-                                    value: loadingProgress.expectedTotalBytes != null
-                                        ? loadingProgress.cumulativeBytesLoaded /
-                                            loadingProgress.expectedTotalBytes!
-                                        : null,
-                                  ),
-                                );
-                              },
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      width: 300,
+                                      height: 200,
+                                      alignment: Alignment.center,
+                                      child: CircularProgressIndicator(
+                                        value:
+                                            loadingProgress
+                                                    .expectedTotalBytes !=
+                                                null
+                                            ? loadingProgress
+                                                      .cumulativeBytesLoaded /
+                                                  loadingProgress
+                                                      .expectedTotalBytes!
+                                            : null,
+                                      ),
+                                    );
+                                  },
                               errorBuilder: (context, error, stackTrace) {
                                 return Container(
                                   width: 300,
@@ -171,9 +161,16 @@ class NoteEditPageState extends State<NoteEditPage> {
                                   child: const Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                                      Icon(
+                                        Icons.broken_image,
+                                        size: 40,
+                                        color: Colors.grey,
+                                      ),
                                       SizedBox(height: 8),
-                                      Text('图片加载失败', style: TextStyle(color: Colors.grey)),
+                                      Text(
+                                        '图片加载失败',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
                                     ],
                                   ),
                                 );
@@ -196,11 +193,19 @@ class NoteEditPageState extends State<NoteEditPage> {
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: const Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
-                                        Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                                        Icon(
+                                          Icons.broken_image,
+                                          size: 40,
+                                          color: Colors.grey,
+                                        ),
                                         SizedBox(height: 8),
-                                        Text('图片加载失败', style: TextStyle(color: Colors.grey)),
+                                        Text(
+                                          '图片加载失败',
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
                                       ],
                                     ),
                                   );
@@ -217,15 +222,21 @@ class NoteEditPageState extends State<NoteEditPage> {
                                 child: const Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.image_not_supported, size: 40, color: Colors.grey),
+                                    Icon(
+                                      Icons.image_not_supported,
+                                      size: 40,
+                                      color: Colors.grey,
+                                    ),
                                     SizedBox(height: 8),
-                                    Text('图片文件不存在', style: TextStyle(color: Colors.grey)),
+                                    Text(
+                                      '图片文件不存在',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
                                   ],
                                 ),
                               );
                             }
                           } else {
-                            // Handle other cases or return a placeholder
                             return Container(
                               width: 300,
                               height: 200,
@@ -236,9 +247,16 @@ class NoteEditPageState extends State<NoteEditPage> {
                               child: const Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.image, size: 40, color: Colors.grey),
+                                  Icon(
+                                    Icons.image,
+                                    size: 40,
+                                    color: Colors.grey,
+                                  ),
                                   SizedBox(height: 8),
-                                  Text('不支持的图片格式', style: TextStyle(color: Colors.grey)),
+                                  Text(
+                                    '不支持的图片格式',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
                                 ],
                               ),
                             );
@@ -264,21 +282,21 @@ class NoteEditPageState extends State<NoteEditPage> {
                         expands: true,
                       ),
               ),
-                    Row(
-                      children: [
-                        Checkbox(
-                          value: _isMarkdown,
-                          onChanged: (value) {
-                            setState(() {
-                              _isMarkdown = value!;
-                            });
-                          },
-                        ),
-                        const Text('使用Markdown格式'),
-                      ],
-                    ),
-                  ],
-                ),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _isMarkdown,
+                    onChanged: (value) {
+                      setState(() {
+                        _isMarkdown = value!;
+                      });
+                    },
+                  ),
+                  const Text('使用Markdown格式'),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
