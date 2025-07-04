@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/huggingface_token_service.dart';
 import '../services/bluelm_config_service.dart';
+import '../services/display_mode_service.dart';
 import '../widgets/custom_toast.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -28,6 +30,12 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _existingAppId;
   String? _existingAppKeyMasked;
   bool _obscureAppKey = true;
+
+  // 显示模式相关
+  List<DisplayMode> _supportedModes = [];
+  DisplayMode? _currentMode;
+  String _currentSetting = 'auto';
+  bool _supportsHighRefreshRate = false;
 
   bool _isLoading = false;
 
@@ -69,6 +77,9 @@ class _SettingsPageState extends State<SettingsPage> {
           });
         }
       }
+
+      // 加载显示模式配置
+      await _loadDisplayModeSettings();
     } catch (e) {
       if (mounted) {
         CustomToast.show(
@@ -294,6 +305,81 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  /// 加载显示模式设置
+  Future<void> _loadDisplayModeSettings() async {
+    try {
+      final displayService = DisplayModeService.instance;
+      final supportedModes = displayService.supportedModes;
+      final currentMode = await displayService.getCurrentMode();
+      final currentSetting = await displayService.getCurrentSetting();
+      final supportsHighRefreshRate = displayService.supportsHighRefreshRate;
+
+      setState(() {
+        _supportedModes = supportedModes;
+        _currentMode = currentMode;
+        _currentSetting = currentSetting;
+        _supportsHighRefreshRate = supportsHighRefreshRate;
+      });
+    } catch (e) {
+      debugPrint('加载显示模式设置失败: $e');
+    }
+  }
+
+  /// 设置显示模式
+  Future<void> _setDisplayMode(String mode) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final displayService = DisplayModeService.instance;
+      bool success = false;
+
+      switch (mode) {
+        case 'high':
+          success = await displayService.setHighRefreshRate();
+          break;
+        case 'low':
+          success = await displayService.setLowRefreshRate();
+          break;
+        case 'auto':
+          success = await displayService.setAutoMode();
+          break;
+        case 'performance':
+          await displayService.optimizeForPerformance();
+          success = true;
+          break;
+        case 'battery':
+          await displayService.optimizeForBattery();
+          success = true;
+          break;
+      }
+
+      if (success) {
+        await _loadDisplayModeSettings();
+        if (mounted) {
+          CustomToast.show(
+            context,
+            message: '显示模式已更新',
+            type: ToastType.success,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        CustomToast.show(
+          context,
+          message: '设置显示模式失败: $e',
+          type: ToastType.error,
+        );
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   /// 构建链接卡片
   Widget _buildLinkCard({
     required String title,
@@ -327,6 +413,11 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 显示模式配置区域
+                  _buildDisplayModeSection(),
+
+                  const SizedBox(height: 40),
+
                   // HuggingFace 配置区域
                   _buildHuggingFaceSection(),
 
@@ -337,6 +428,176 @@ class _SettingsPageState extends State<SettingsPage> {
                 ],
               ),
             ),
+    );
+  }
+
+  /// 构建显示模式配置区域
+  Widget _buildDisplayModeSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 标题
+        Row(
+          children: [
+            Icon(Icons.display_settings, color: Colors.green),
+            const SizedBox(width: 8),
+            const Text(
+              '显示设置',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // 当前显示模式信息
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.green),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '当前显示状态',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_currentMode != null) ...[
+                  Text('分辨率: ${_currentMode!.width}x${_currentMode!.height}'),
+                  Text(
+                    '刷新率: ${_currentMode!.refreshRate.toStringAsFixed(1)}Hz',
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Text('支持高刷新率: ${_supportsHighRefreshRate ? "是" : "否"}'),
+                if (_supportedModes.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '支持的刷新率: ${DisplayModeService.instance.getSupportedRefreshRates().map((r) => "${r.toStringAsFixed(0)}Hz").join(", ")}',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // 显示模式选择
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.tune, color: Colors.green),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '刷新率设置',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // 自动模式
+                _buildDisplayModeOption(
+                  'auto',
+                  '自动模式',
+                  '系统根据内容自动调整刷新率',
+                  Icons.auto_awesome,
+                ),
+
+                if (_supportsHighRefreshRate) ...[
+                  const SizedBox(height: 12),
+                  // 高刷新率模式
+                  _buildDisplayModeOption(
+                    'high',
+                    '高刷新率',
+                    '启用最高刷新率，提供最流畅体验',
+                    Icons.speed,
+                  ),
+
+                  const SizedBox(height: 12),
+                  // 省电模式
+                  _buildDisplayModeOption(
+                    'battery',
+                    '省电模式',
+                    '使用60Hz刷新率，延长电池续航',
+                    Icons.battery_saver,
+                  ),
+
+                  const SizedBox(height: 12),
+                  // 性能模式
+                  _buildDisplayModeOption(
+                    'performance',
+                    '性能模式',
+                    '针对动画和游戏优化刷新率',
+                    Icons.rocket_launch,
+                  ),
+                ],
+
+                const SizedBox(height: 16),
+                Text(
+                  '• 高刷新率提供更流畅的视觉体验\n'
+                  '• 较高刷新率会增加电池消耗\n'
+                  '• 系统可能会根据温度等因素自动调整',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建显示模式选项
+  Widget _buildDisplayModeOption(
+    String mode,
+    String title,
+    String description,
+    IconData icon,
+  ) {
+    final isSelected = _currentSetting == mode;
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: isSelected ? Colors.green : Colors.grey.shade300,
+          width: isSelected ? 2 : 1,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        color: isSelected ? Colors.green.withValues(alpha: 0.1) : null,
+      ),
+      child: ListTile(
+        leading: Icon(icon, color: isSelected ? Colors.green : Colors.grey),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.green : null,
+          ),
+        ),
+        subtitle: Text(description),
+        trailing: isSelected
+            ? Icon(Icons.check_circle, color: Colors.green)
+            : null,
+        onTap: () => _setDisplayMode(mode),
+      ),
     );
   }
 

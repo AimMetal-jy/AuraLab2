@@ -313,6 +313,63 @@ class NoteListPageState extends State<NoteListPage> {
     );
   }
 
+  // 显示删除确认对话框
+  Future<void> _showDeleteConfirmDialog(Note note) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('删除笔记'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('确定要删除笔记 "${note.title}" 吗？'),
+                const SizedBox(height: 8),
+                const Text(
+                  '此操作无法撤销。',
+                  style: TextStyle(color: Colors.red, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('取消'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text('删除', style: TextStyle(color: Colors.red)),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _deleteNote(note);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 删除笔记
+  Future<void> _deleteNote(Note note) async {
+    try {
+      await NoteDatabaseService.instance.deleteNote(note.id!);
+      _refreshNotes();
+      if (!mounted) return;
+      CustomToast.show(context, message: '笔记已删除', type: ToastType.success);
+    } catch (e) {
+      if (!mounted) return;
+      CustomToast.show(
+        context,
+        message: '删除失败: ${e.toString()}',
+        type: ToastType.error,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -334,7 +391,7 @@ class NoteListPageState extends State<NoteListPage> {
                         });
                       },
                     )
-                  : const Text('笔记'),
+                  : const Text('AuraLab笔记页'),
               actions: [
                 if (_isSearching)
                   IconButton(
@@ -439,61 +496,112 @@ class NoteListPageState extends State<NoteListPage> {
                   );
                 }
 
-                return ListView.builder(
+                return GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 0.8,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                  ),
                   itemCount: filteredNotes.length,
                   itemBuilder: (context, index) {
                     final note = filteredNotes[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).primaryColor.withValues(alpha: 0.1),
-                          child: Text(
-                            note.title.isNotEmpty
-                                ? note.title[0].toUpperCase()
-                                : 'N',
-                            style: TextStyle(
-                              color: Theme.of(context).primaryColor,
-                              fontWeight: FontWeight.bold,
-                            ),
+                    return GestureDetector(
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => NoteEditPage(note: note),
+                          ),
+                        );
+                        _refreshNotes();
+                      },
+                      onLongPress: () {
+                        _showDeleteConfirmDialog(note);
+                      },
+                      child: Card(
+                        elevation: 2,
+                        margin: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 标题区域
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 20,
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).primaryColor.withValues(alpha: 0.1),
+                                    child: Text(
+                                      note.title.isNotEmpty
+                                          ? note.title[0].toUpperCase()
+                                          : 'N',
+                                      style: TextStyle(
+                                        color: Theme.of(context).primaryColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      note.title,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              // 内容区域
+                              Expanded(
+                                child: Text(
+                                  note.content,
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              // 时间和操作提示
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _formatDate(note.updatedAt),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey[500],
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.more_vert,
+                                    size: 14,
+                                    color: Colors.grey[400],
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        title: Text(
-                          note.title,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              note.content,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.grey[600]),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _formatDate(note.updatedAt),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[500],
-                              ),
-                            ),
-                          ],
-                        ),
-                        onTap: () async {
-                          await Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => NoteEditPage(note: note),
-                            ),
-                          );
-                          _refreshNotes();
-                        },
                       ),
                     );
                   },

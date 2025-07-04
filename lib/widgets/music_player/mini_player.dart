@@ -208,15 +208,15 @@ class MiniPlayer extends StatelessWidget {
           tooltip: '最小化',
         ),
         // 隐藏按钮
-        IconButton(
-          onPressed: () {
-            miniPlayerService.hide();
-          },
-          icon: const Icon(Icons.close, size: 18),
-          padding: const EdgeInsets.all(8),
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          tooltip: '隐藏播放器',
-        ),
+        // IconButton(
+        //   onPressed: () {
+        //     miniPlayerService.hide();
+        //   },
+        //   icon: const Icon(Icons.close, size: 18),
+        //   padding: const EdgeInsets.all(8),
+        //   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        //   tooltip: '隐藏播放器',
+        // ),
       ],
     );
   }

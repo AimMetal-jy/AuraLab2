@@ -61,7 +61,7 @@ class TabsState extends State<Tabs> {
       case 1:
         return "翻译";
       case 2:
-        return "笔记";
+        return "AuraLab笔记";
       case 3:
         return "文生音频";
       case 4:

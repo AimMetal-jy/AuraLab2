@@ -624,22 +624,22 @@ class _AsrPageState extends State<AsrPage> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(
-                          child: RadioListTile<TranscriptionModel>(
-                            title: const Text('蓝心小V'),
-                            subtitle: const Text('快速转录'),
-                            value: TranscriptionModel.bluelm,
-                            groupValue: _selectedModel,
-                            onChanged: _isProcessing
-                                ? null
-                                : (value) {
-                                    setState(() {
-                                      _selectedModel = value!;
-                                    });
-                                    _loadTaskHistory();
-                                  },
-                          ),
-                        ),
+                        // Expanded(
+                        //   child: RadioListTile<TranscriptionModel>(
+                        //     title: const Text('蓝心小V'),
+                        //     subtitle: const Text('快速转录'),
+                        //     value: TranscriptionModel.bluelm,
+                        //     groupValue: _selectedModel,
+                        //     onChanged: _isProcessing
+                        //         ? null
+                        //         : (value) {
+                        //             setState(() {
+                        //               _selectedModel = value!;
+                        //             });
+                        //             _loadTaskHistory();
+                        //           },
+                        //   ),
+                        // ),
                         Expanded(
                           child: RadioListTile<TranscriptionModel>(
                             title: const Text('WhisperX'),

@@ -10,6 +10,121 @@ import '../models/note_model.dart';
 import '../services/note_database_service.dart';
 import '../widgets/custom_toast.dart';
 
+// 自定义图片构建器
+class CustomImageBuilder extends MarkdownElementBuilder {
+  @override
+  Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
+    final String? src = element.attributes['src'];
+    if (src == null) return null;
+
+    final uri = Uri.tryParse(src);
+    if (uri == null) return null;
+
+    if (uri.scheme == 'http' || uri.scheme == 'https') {
+      return Image.network(
+        uri.toString(),
+        width: 300,
+        height: 200,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            width: 300,
+            height: 200,
+            alignment: Alignment.center,
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                        loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: 300,
+            height: 200,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('图片加载失败', style: TextStyle(color: Colors.grey)),
+              ],
+            ),
+          );
+        },
+      );
+    } else if (uri.scheme == 'file') {
+      final file = File.fromUri(uri);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          width: 300,
+          height: 200,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              width: 300,
+              height: 200,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                  SizedBox(height: 8),
+                  Text('图片加载失败', style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            );
+          },
+        );
+      } else {
+        return Container(
+          width: 300,
+          height: 200,
+          decoration: BoxDecoration(
+            color: Colors.grey[300],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.image_not_supported, size: 40, color: Colors.grey),
+              SizedBox(height: 8),
+              Text('图片文件不存在', style: TextStyle(color: Colors.grey)),
+            ],
+          ),
+        );
+      }
+    } else {
+      return Container(
+        width: 300,
+        height: 200,
+        decoration: BoxDecoration(
+          color: Colors.grey[300],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.image, size: 40, color: Colors.grey),
+            SizedBox(height: 8),
+            Text('不支持的图片格式', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+  }
+}
+
 class NoteEditPage extends StatefulWidget {
   final Note? note;
   final String? initialContent;
@@ -123,145 +238,8 @@ class NoteEditPageState extends State<NoteEditPage> {
                 child: _showPreview
                     ? Markdown(
                         data: _contentController.text,
-                        imageBuilder: (Uri uri, String? title, String? alt) {
-                          if (uri.scheme == 'http' || uri.scheme == 'https') {
-                            return Image.network(
-                              uri.toString(),
-                              width: 300,
-                              height: 200,
-                              fit: BoxFit.cover,
-                              loadingBuilder:
-                                  (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      width: 300,
-                                      height: 200,
-                                      alignment: Alignment.center,
-                                      child: CircularProgressIndicator(
-                                        value:
-                                            loadingProgress
-                                                    .expectedTotalBytes !=
-                                                null
-                                            ? loadingProgress
-                                                      .cumulativeBytesLoaded /
-                                                  loadingProgress
-                                                      .expectedTotalBytes!
-                                            : null,
-                                      ),
-                                    );
-                                  },
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  width: 300,
-                                  height: 200,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey[300],
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.broken_image,
-                                        size: 40,
-                                        color: Colors.grey,
-                                      ),
-                                      SizedBox(height: 8),
-                                      Text(
-                                        '图片加载失败',
-                                        style: TextStyle(color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            );
-                          } else if (uri.scheme == 'file') {
-                            final file = File.fromUri(uri);
-                            if (file.existsSync()) {
-                              return Image.file(
-                                file,
-                                width: 300,
-                                height: 200,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    width: 300,
-                                    height: 200,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[300],
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.broken_image,
-                                          size: 40,
-                                          color: Colors.grey,
-                                        ),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          '图片加载失败',
-                                          style: TextStyle(color: Colors.grey),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              );
-                            } else {
-                              return Container(
-                                width: 300,
-                                height: 200,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[300],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.image_not_supported,
-                                      size: 40,
-                                      color: Colors.grey,
-                                    ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      '图片文件不存在',
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }
-                          } else {
-                            return Container(
-                              width: 300,
-                              height: 200,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[300],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.image,
-                                    size: 40,
-                                    color: Colors.grey,
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    '不支持的图片格式',
-                                    style: TextStyle(color: Colors.grey),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                        },
+                        // 使用新的builders属性替代已弃用的imageBuilder
+                        builders: {'img': CustomImageBuilder()},
                         onTapLink: (text, href, title) {
                           if (href != null) {
                             launchUrl(Uri.parse(href));

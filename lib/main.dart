@@ -7,6 +7,7 @@ import 'package:auralab_0701/services/audio_library_service.dart';
 import 'package:auralab_0701/services/background_task_service.dart';
 import 'package:auralab_0701/services/mini_player_service.dart';
 import 'package:auralab_0701/services/license_service.dart';
+import 'package:auralab_0701/services/display_mode_service.dart';
 import 'package:auralab_0701/config/performance_config.dart';
 
 void main() async {
@@ -25,6 +26,9 @@ void main() async {
 /// 配置高刷新率支持
 Future<void> _configureHighRefreshRate() async {
   try {
+    // 初始化显示模式服务
+    await DisplayModeService.instance.initialize();
+
     // 使用性能配置类配置系统UI
     await PerformanceConfig.configureSystemUI();
 
