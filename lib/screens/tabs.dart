@@ -10,16 +10,19 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:auralab_0701/services/background_task_service.dart';
 import 'package:auralab_0701/screens/note_list_page.dart';
+import 'package:auralab_0701/screens/home.dart';
 
 class Tabs extends StatefulWidget {
-  const Tabs({super.key});
+  final int initialIndex;
+
+  const Tabs({super.key, this.initialIndex = 2});
 
   @override
   TabsState createState() => TabsState();
 }
 
 class TabsState extends State<Tabs> {
-  int _currentIndex = 2;
+  late int _currentIndex;
   final List<Widget> _pages = [
     VocabularyBookPage(),
     TranslationPage(),
@@ -31,6 +34,7 @@ class TabsState extends State<Tabs> {
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialIndex;
     // 在下一帧设置BackgroundTaskService的context
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -40,6 +44,13 @@ class TabsState extends State<Tabs> {
         );
         backgroundTaskService.setContext(context);
       }
+    });
+  }
+
+  // 添加公共方法来切换tab
+  void switchTab(int index) {
+    setState(() {
+      _currentIndex = index;
     });
   }
 
@@ -55,6 +66,8 @@ class TabsState extends State<Tabs> {
         return "文生音频";
       case 4:
         return "音频转字";
+      case 5:
+        return "音频库";
       default:
         return "AuraLab";
     }
@@ -82,6 +95,14 @@ class TabsState extends State<Tabs> {
     }
   }
 
+  Widget _getCurrentPage() {
+    // 特殊处理音频库页面
+    if (_currentIndex == 5) {
+      return HomePage();
+    }
+    return _pages[_currentIndex];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -96,7 +117,7 @@ class TabsState extends State<Tabs> {
             ),
             actions: _getAppBarActions(),
           ),
-          body: _pages[_currentIndex],
+          body: _getCurrentPage(),
           drawer: TabsDrawer(),
           // drawerEdgeDragWidth: MediaQuery.of(context).size.width / 2,
           bottomNavigationBar: Column(
@@ -111,7 +132,7 @@ class TabsState extends State<Tabs> {
               // 底部导航栏
               BottomNavigationBar(
                 type: BottomNavigationBarType.fixed,
-                currentIndex: _currentIndex,
+                currentIndex: _currentIndex > 4 ? 2 : _currentIndex, // 音频库显示为主页
                 onTap: (index) {
                   setState(() {
                     _currentIndex = index;

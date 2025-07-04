@@ -9,8 +9,6 @@ import '../models/audio_player_model.dart';
 import 'dart:io';
 import 'dart:convert';
 import '../widgets/custom_toast.dart';
-import '../widgets/drawer.dart';
-import '../widgets/common_bottom_bar.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -45,23 +43,6 @@ class HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-        title: const Text(
-          "音频库",
-          style: TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
-        ),
-        actions: [
-          IconButton(
-            onPressed: () {
-              _refreshAudioLibrary();
-            },
-            icon: const Icon(Icons.refresh),
-            tooltip: '刷新音频库',
-          ),
-        ],
-      ),
-      drawer: const TabsDrawer(),
       body: Column(
         children: [
           // 顶部标题和搜索栏
@@ -107,14 +88,14 @@ class HomePageState extends State<HomePage>
                     ),
                     Row(
                       children: [
-                        // TTS快速入口
-                        // TextButton.icon(
-                        //   onPressed: () => context.push('/tts-processing'),
-                        //   icon: const Icon(Icons.record_voice_over),
-                        //   label: const Text('TTS处理'),
-                        // ),
-                        const SizedBox(width: 8),
-                        // 刷新按钮移到了AppBar
+                        // 刷新按钮
+                        IconButton(
+                          onPressed: () {
+                            _refreshAudioLibrary();
+                          },
+                          icon: const Icon(Icons.refresh),
+                          tooltip: '刷新音频库',
+                        ),
                       ],
                     ),
                   ],
@@ -276,7 +257,6 @@ class HomePageState extends State<HomePage>
         tooltip: '添加音频文件',
         child: const Icon(Icons.add, color: Colors.white),
       ),
-      bottomNavigationBar: const CommonBottomBar(currentIndex: 2), // 音频库对应主页
     );
   }
 

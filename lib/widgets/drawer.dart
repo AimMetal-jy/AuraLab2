@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import '../screens/settings_page.dart';
+import '../screens/tabs.dart';
 
 class TabsDrawer extends StatelessWidget {
   const TabsDrawer({super.key});
@@ -25,9 +25,11 @@ class TabsDrawer extends StatelessWidget {
             leading: const CircleAvatar(child: Icon(Icons.music_note)),
             onTap: () {
               Navigator.of(context).pop(); // 关闭抽屉
-              GoRouter.of(
-                context,
-              ).pushReplacement('/audio-library'); // 使用pushReplacement
+              // 找到TabsState并更新当前索引
+              final tabsState = context.findAncestorStateOfType<TabsState>();
+              if (tabsState != null) {
+                tabsState.switchTab(5); // 音频库
+              }
             },
           ),
           const Divider(),
@@ -36,9 +38,11 @@ class TabsDrawer extends StatelessWidget {
             leading: const CircleAvatar(child: Icon(Icons.note)),
             onTap: () {
               Navigator.of(context).pop(); // 关闭抽屉
-              GoRouter.of(
-                context,
-              ).pushReplacement('/notes'); // 使用pushReplacement
+              // 找到TabsState并更新当前索引
+              final tabsState = context.findAncestorStateOfType<TabsState>();
+              if (tabsState != null) {
+                tabsState.switchTab(2); // 笔记
+              }
             },
           ),
           const Divider(),
