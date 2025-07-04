@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/audio_player_model.dart';
 import '../../services/audio_player_service.dart';
+import '../../services/audio_library_service.dart';
 import 'progress_bar.dart';
+import 'playlist_dialog.dart';
 
 /// 统一的播放控制组件
 class PlayerControls extends StatelessWidget {
@@ -71,7 +73,7 @@ class PlayerControls extends StatelessWidget {
 
                   // 上一句/上一首
                   IconButton(
-                    onPressed: () => _seekToPrevious(player),
+                    onPressed: () => _seekToPrevious(context, player),
                     icon: const Icon(
                       Icons.skip_previous,
                       color: Colors.white,
@@ -101,7 +103,7 @@ class PlayerControls extends StatelessWidget {
 
                   // 下一句/下一首
                   IconButton(
-                    onPressed: () => _seekToNext(player),
+                    onPressed: () => _seekToNext(context, player),
                     icon: const Icon(
                       Icons.skip_next,
                       color: Colors.white,
@@ -109,15 +111,25 @@ class PlayerControls extends StatelessWidget {
                     ),
                   ),
 
-                  // 循环播放
-                  IconButton(
-                    onPressed: () => _toggleRepeat(player),
-                    icon: Icon(
-                      Icons.repeat,
-                      color: _getRepeatColor(player),
-                      size: 24,
+                  // 循环播放/播放列表
+                  if (isTranscriptionAudio)
+                    IconButton(
+                      onPressed: () => _toggleRepeat(player),
+                      icon: Icon(
+                        Icons.repeat,
+                        color: _getRepeatColor(player),
+                        size: 24,
+                      ),
+                    )
+                  else
+                    IconButton(
+                      onPressed: () => _showPlaylist(context),
+                      icon: const Icon(
+                        Icons.queue_music,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                     ),
-                  ),
                 ],
               ),
 
@@ -158,7 +170,7 @@ class PlayerControls extends StatelessWidget {
     }
   }
 
-  void _seekToPrevious(AudioPlayerService player) {
+  void _seekToPrevious(BuildContext context, AudioPlayerService player) {
     if (isTranscriptionAudio && audioData is AudioPlayData) {
       final data = audioData as AudioPlayData;
       final lyrics = data.lyrics;
@@ -170,12 +182,12 @@ class PlayerControls extends StatelessWidget {
         player.seekToLyricLine(targetLyric);
       }
     } else {
-      // 普通音频：回到开头或上一首
-      player.seekTo(Duration.zero);
+      // 普通音频：播放上一首
+      _playPreviousInPlaylist(context, player);
     }
   }
 
-  void _seekToNext(AudioPlayerService player) {
+  void _seekToNext(BuildContext context, AudioPlayerService player) {
     if (isTranscriptionAudio && audioData is AudioPlayData) {
       final data = audioData as AudioPlayData;
       final lyrics = data.lyrics;
@@ -187,8 +199,93 @@ class PlayerControls extends StatelessWidget {
         player.seekToLyricLine(targetLyric);
       }
     } else {
-      // 普通音频：暂时不实现（需要播放列表支持）
-      // TODO: 实现播放列表功能
+      // 普通音频：播放下一首
+      _playNextInPlaylist(context, player);
+    }
+  }
+
+  void _playPreviousInPlaylist(
+    BuildContext context,
+    AudioPlayerService player,
+  ) {
+    final audioLibrary = Provider.of<AudioLibraryService>(
+      context,
+      listen: false,
+    );
+    final audioItems = audioLibrary.audioItems;
+
+    if (audioItems.isEmpty) return;
+
+    // 找到当前播放的音频在列表中的位置
+    int currentIndex = audioItems.indexWhere(
+      (item) => item.title == player.currentSong,
+    );
+
+    if (currentIndex == -1) {
+      // 如果找不到当前歌曲，播放第一首
+      final firstItem = audioItems.first;
+      player.playFromFile(
+        firstItem.filePath,
+        songTitle: firstItem.title,
+        artist: firstItem.artist,
+      );
+    } else if (currentIndex > 0) {
+      // 播放上一首
+      final previousItem = audioItems[currentIndex - 1];
+      player.playFromFile(
+        previousItem.filePath,
+        songTitle: previousItem.title,
+        artist: previousItem.artist,
+      );
+    } else {
+      // 已经是第一首，循环到最后一首
+      final lastItem = audioItems.last;
+      player.playFromFile(
+        lastItem.filePath,
+        songTitle: lastItem.title,
+        artist: lastItem.artist,
+      );
+    }
+  }
+
+  void _playNextInPlaylist(BuildContext context, AudioPlayerService player) {
+    final audioLibrary = Provider.of<AudioLibraryService>(
+      context,
+      listen: false,
+    );
+    final audioItems = audioLibrary.audioItems;
+
+    if (audioItems.isEmpty) return;
+
+    // 找到当前播放的音频在列表中的位置
+    int currentIndex = audioItems.indexWhere(
+      (item) => item.title == player.currentSong,
+    );
+
+    if (currentIndex == -1) {
+      // 如果找不到当前歌曲，播放第一首
+      final firstItem = audioItems.first;
+      player.playFromFile(
+        firstItem.filePath,
+        songTitle: firstItem.title,
+        artist: firstItem.artist,
+      );
+    } else if (currentIndex < audioItems.length - 1) {
+      // 播放下一首
+      final nextItem = audioItems[currentIndex + 1];
+      player.playFromFile(
+        nextItem.filePath,
+        songTitle: nextItem.title,
+        artist: nextItem.artist,
+      );
+    } else {
+      // 已经是最后一首，循环到第一首
+      final firstItem = audioItems.first;
+      player.playFromFile(
+        firstItem.filePath,
+        songTitle: firstItem.title,
+        artist: firstItem.artist,
+      );
     }
   }
 
@@ -206,6 +303,10 @@ class PlayerControls extends StatelessWidget {
     } else {
       return player.isRepeat ? Colors.white : Colors.white54;
     }
+  }
+
+  void _showPlaylist(BuildContext context) {
+    showDialog(context: context, builder: (context) => const PlaylistDialog());
   }
 
   void _showSpeedDialog(BuildContext context, AudioPlayerService player) {

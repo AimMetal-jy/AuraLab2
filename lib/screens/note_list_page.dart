@@ -8,6 +8,8 @@ import '../widgets/drawer.dart';
 import '../widgets/common_bottom_bar.dart';
 import '../widgets/custom_toast.dart';
 
+enum NoteSortOption { createdTime, modifiedTime, title }
+
 class NoteListPage extends StatefulWidget {
   const NoteListPage({super.key, this.showAppBar = true});
 
@@ -22,16 +24,133 @@ class NoteListPageState extends State<NoteListPage> {
   final ImagePicker _picker = ImagePicker();
   bool _isProcessingOCR = false;
 
+  // 搜索和排序相关变量
+  String _searchQuery = '';
+  NoteSortOption _currentSort = NoteSortOption.modifiedTime;
+  bool _isAscending = false;
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _notesFuture = NoteDatabaseService.instance.readAllNotes();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   void _refreshNotes() {
     setState(() {
       _notesFuture = NoteDatabaseService.instance.readAllNotes();
     });
+  }
+
+  // 过滤和排序笔记
+  List<Note> _filterAndSortNotes(List<Note> notes) {
+    // 搜索过滤
+    var filtered = notes;
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      filtered = notes.where((note) {
+        return note.title.toLowerCase().contains(query) ||
+            note.content.toLowerCase().contains(query);
+      }).toList();
+    }
+
+    // 排序
+    filtered.sort((a, b) {
+      int comparison;
+      switch (_currentSort) {
+        case NoteSortOption.createdTime:
+          comparison = a.createdAt.compareTo(b.createdAt);
+          break;
+        case NoteSortOption.modifiedTime:
+          comparison = a.updatedAt.compareTo(b.updatedAt);
+          break;
+        case NoteSortOption.title:
+          comparison = a.title.compareTo(b.title);
+          break;
+      }
+      return _isAscending ? comparison : -comparison;
+    });
+
+    return filtered;
+  }
+
+  // 显示排序选项
+  void _showSortOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Container(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '排序方式',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  RadioListTile<NoteSortOption>(
+                    title: const Text('修改时间'),
+                    value: NoteSortOption.modifiedTime,
+                    groupValue: _currentSort,
+                    onChanged: (value) {
+                      setState(() => _currentSort = value!);
+                      this.setState(() => _currentSort = value!);
+                    },
+                  ),
+                  RadioListTile<NoteSortOption>(
+                    title: const Text('创建时间'),
+                    value: NoteSortOption.createdTime,
+                    groupValue: _currentSort,
+                    onChanged: (value) {
+                      setState(() => _currentSort = value!);
+                      this.setState(() => _currentSort = value!);
+                    },
+                  ),
+                  RadioListTile<NoteSortOption>(
+                    title: const Text('标题'),
+                    value: NoteSortOption.title,
+                    groupValue: _currentSort,
+                    onChanged: (value) {
+                      setState(() => _currentSort = value!);
+                      this.setState(() => _currentSort = value!);
+                    },
+                  ),
+                  const Divider(),
+                  SwitchListTile(
+                    title: const Text('升序排列'),
+                    subtitle: Text(_isAscending ? '从旧到新 / A-Z' : '从新到旧 / Z-A'),
+                    value: _isAscending,
+                    onChanged: (value) {
+                      setState(() => _isAscending = value);
+                      this.setState(() => _isAscending = value);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('确定'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   /// 拍照识别文字功能
@@ -199,67 +318,190 @@ class NoteListPageState extends State<NoteListPage> {
     return Scaffold(
       appBar: widget.showAppBar
           ? AppBar(
-              title: const Text('笔记'),
+              title: _isSearching
+                  ? TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        hintText: '搜索笔记...',
+                        border: InputBorder.none,
+                        hintStyle: TextStyle(color: Colors.white70),
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                      },
+                    )
+                  : const Text('笔记'),
               actions: [
-                IconButton(
-                  icon: const Icon(Icons.camera_alt),
-                  onPressed: _showOCROptions,
-                  tooltip: '拍照识别文字',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: () {
-                    // TODO: Implement search functionality
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.sort),
-                  onPressed: () {
-                    // TODO: Implement sort functionality
-                  },
-                ),
+                if (_isSearching)
+                  IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      setState(() {
+                        _isSearching = false;
+                        _searchQuery = '';
+                        _searchController.clear();
+                      });
+                    },
+                  )
+                else ...[
+                  IconButton(
+                    icon: const Icon(Icons.camera_alt),
+                    onPressed: _showOCROptions,
+                    tooltip: '拍照识别文字',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.search),
+                    onPressed: () {
+                      setState(() {
+                        _isSearching = true;
+                      });
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.sort),
+                    onPressed: _showSortOptions,
+                  ),
+                ],
               ],
             )
           : null,
       drawer: widget.showAppBar ? const TabsDrawer() : null,
-      body: FutureBuilder<List<Note>>(
-        future: _notesFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('没有笔记'));
-          }
+      body: Column(
+        children: [
+          // 搜索结果提示
+          if (_searchQuery.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: Colors.grey[100],
+              child: Row(
+                children: [
+                  Icon(Icons.search, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '搜索 "$_searchQuery" 的结果',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _searchQuery = '';
+                        _searchController.clear();
+                      });
+                    },
+                    child: const Text('清除'),
+                  ),
+                ],
+              ),
+            ),
+          // 笔记列表
+          Expanded(
+            child: FutureBuilder<List<Note>>(
+              future: _notesFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(child: Text('没有笔记'));
+                }
 
-          final notes = snapshot.data!;
+                final filteredNotes = _filterAndSortNotes(snapshot.data!);
 
-          return ListView.builder(
-            itemCount: notes.length,
-            itemBuilder: (context, index) {
-              final note = notes[index];
-              return ListTile(
-                title: Text(note.title),
-                subtitle: Text(
-                  note.content,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                onTap: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => NoteEditPage(note: note),
+                if (filteredNotes.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '没有找到匹配的笔记',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
                   );
-                  _refreshNotes();
-                },
-              );
-            },
-          );
-        },
+                }
+
+                return ListView.builder(
+                  itemCount: filteredNotes.length,
+                  itemBuilder: (context, index) {
+                    final note = filteredNotes[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Theme.of(
+                            context,
+                          ).primaryColor.withValues(alpha: 0.1),
+                          child: Text(
+                            note.title.isNotEmpty
+                                ? note.title[0].toUpperCase()
+                                : 'N',
+                            style: TextStyle(
+                              color: Theme.of(context).primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          note.title,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              note.content,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _formatDate(note.updatedAt),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
+                        ),
+                        onTap: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => NoteEditPage(note: note),
+                            ),
+                          );
+                          _refreshNotes();
+                        },
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: _isProcessingOCR
           ? FloatingActionButton(
@@ -282,5 +524,26 @@ class NoteListPageState extends State<NoteListPage> {
           ? const CommonBottomBar(currentIndex: 2)
           : null, // 只在独立页面显示
     );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        if (difference.inMinutes == 0) {
+          return '刚刚';
+        }
+        return '${difference.inMinutes}分钟前';
+      }
+      return '${difference.inHours}小时前';
+    } else if (difference.inDays == 1) {
+      return '昨天';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}天前';
+    } else {
+      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    }
   }
 }

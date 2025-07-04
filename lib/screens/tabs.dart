@@ -76,22 +76,9 @@ class TabsState extends State<Tabs> {
   List<Widget> _getAppBarActions() {
     switch (_currentIndex) {
       case 2: // 笔记页面
-        return [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              // TODO: Implement search functionality
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.sort),
-            onPressed: () {
-              // TODO: Implement sort functionality
-            },
-          ),
-        ];
+        return [];
       default:
-        return [IconButton(onPressed: () {}, icon: Icon(Icons.search))];
+        return [];
     }
   }
 

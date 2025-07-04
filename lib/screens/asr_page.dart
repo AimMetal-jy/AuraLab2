@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../services/transcription_service.dart';
@@ -1061,7 +1062,13 @@ class _AsrPageState extends State<AsrPage> {
                           IconButton(
                             onPressed: () {
                               // 复制到剪贴板
-                              // Clipboard.setData(ClipboardData(text: _transcriptionResult!));
+                              Clipboard.setData(
+                                ClipboardData(
+                                  text: _formatTranscriptionResult(
+                                    _transcriptionResult!,
+                                  ),
+                                ),
+                              );
                               _showStatusSnackBar('结果已复制到剪贴板');
                             },
                             icon: const Icon(Icons.copy),
@@ -1422,7 +1429,9 @@ class _AsrPageState extends State<AsrPage> {
               ),
               TextButton(
                 onPressed: () {
-                  // TODO: 实现复制到剪贴板功能
+                  // 实现复制到剪贴板功能
+                  final textToCopy = _formatTranscriptionResult(result);
+                  Clipboard.setData(ClipboardData(text: textToCopy));
                   Navigator.pop(context);
                   _showStatusSnackBar('已复制到剪贴板');
                 },
