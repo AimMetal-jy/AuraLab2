@@ -30,6 +30,10 @@ class NoteListPageState extends State<NoteListPage> {
   bool _isAscending = false;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  
+  // 标签筛选相关变量
+  String _selectedTag = '';
+  List<String> _allTags = [];
 
   @override
   void initState() {
@@ -47,6 +51,23 @@ class NoteListPageState extends State<NoteListPage> {
     setState(() {
       _notesFuture = NoteDatabaseService.instance.readAllNotes();
     });
+    _updateTagsList();
+  }
+  
+  // 更新标签列表
+  void _updateTagsList() async {
+    final notes = await NoteDatabaseService.instance.readAllNotes();
+    final tags = <String>{};
+    for (final note in notes) {
+      for (final tag in note.tags) {
+        if (tag.isNotEmpty) {
+          tags.add(tag);
+        }
+      }
+    }
+    setState(() {
+      _allTags = tags.toList()..sort();
+    });
   }
 
   // 过滤和排序笔记
@@ -57,7 +78,15 @@ class NoteListPageState extends State<NoteListPage> {
       final query = _searchQuery.toLowerCase();
       filtered = notes.where((note) {
         return note.title.toLowerCase().contains(query) ||
-            note.content.toLowerCase().contains(query);
+            note.content.toLowerCase().contains(query) ||
+            note.tags.any((tag) => tag.toLowerCase().contains(query));
+      }).toList();
+    }
+    
+    // 标签筛选
+    if (_selectedTag.isNotEmpty) {
+      filtered = filtered.where((note) {
+        return note.tags.contains(_selectedTag);
       }).toList();
     }
 
@@ -370,6 +399,207 @@ class NoteListPageState extends State<NoteListPage> {
     }
   }
 
+  // 标签筛选弹窗
+  void _showTagFilterDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('按标签筛选'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text('显示全部'),
+                leading: Radio<String>(
+                  value: '',
+                  groupValue: _selectedTag,
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedTag = value!;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ),
+              const Divider(),
+              if (_allTags.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('暂无标签'),
+                )
+              else
+                ...(_allTags.map((tag) => ListTile(
+                  title: Text(tag),
+                  leading: Radio<String>(
+                    value: tag,
+                    groupValue: _selectedTag,
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedTag = value!;
+                      });
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ))),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  // 分类/标签弹窗
+  void _showTagDialog() async {
+    final notes = await _notesFuture;
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) {
+        String? selectedTag;
+        final tagController = TextEditingController();
+        return AlertDialog(
+          title: const Text('为笔记打标签'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('输入新标签或选择已有标签：'),
+              TextField(
+                controller: tagController,
+                decoration: const InputDecoration(hintText: '输入标签'),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final note in notes)
+                    for (final tag in note.tags)
+                      if (tag.isNotEmpty)
+                        ActionChip(
+                          label: Text(tag),
+                          onPressed: () {
+                            selectedTag = tag;
+                            tagController.text = tag;
+                          },
+                        ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final tag = tagController.text.trim();
+                if (tag.isEmpty) return;
+                // 给所有选中的笔记打标签（这里只做演示，实际可扩展为多选/单选）
+                for (final note in notes) {
+                  if (!note.tags.contains(tag)) {
+                    final updated = note.copyWith(tags: [...note.tags, tag]);
+                    await NoteDatabaseService.instance.updateNote(updated);
+                  }
+                }
+                if (!mounted) return;
+                Navigator.of(context).pop();
+                _refreshNotes();
+                CustomToast.show(
+                  context,
+                  message: '标签已添加',
+                  type: ToastType.success,
+                );
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 单条笔记标签编辑弹窗
+  void _showNoteTagDialog(Note note) async {
+    final tagController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('为该笔记打标签'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('输入新标签：'),
+              TextField(
+                controller: tagController,
+                decoration: const InputDecoration(hintText: '输入标签'),
+              ),
+              const SizedBox(height: 12),
+              if (note.tags.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final tag in note.tags)
+                      Chip(
+                        label: Text(tag),
+                        onDeleted: () async {
+                          final updated = note.copyWith(
+                            tags: List.of(note.tags)..remove(tag),
+                          );
+                          await NoteDatabaseService.instance.updateNote(
+                            updated,
+                          );
+                          if (!mounted) return;
+                          Navigator.of(context).pop();
+                          _refreshNotes();
+                          CustomToast.show(
+                            context,
+                            message: '标签已移除',
+                            type: ToastType.success,
+                          );
+                        },
+                      ),
+                  ],
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final tag = tagController.text.trim();
+                if (tag.isEmpty) return;
+                if (!note.tags.contains(tag)) {
+                  final updated = note.copyWith(tags: [...note.tags, tag]);
+                  await NoteDatabaseService.instance.updateNote(updated);
+                }
+                if (!mounted) return;
+                Navigator.of(context).pop();
+                _refreshNotes();
+                CustomToast.show(
+                  context,
+                  message: '标签已添加',
+                  type: ToastType.success,
+                );
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -393,36 +623,38 @@ class NoteListPageState extends State<NoteListPage> {
                     )
                   : const Text('AuraLab笔记页'),
               actions: [
-                if (_isSearching)
-                  IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      setState(() {
-                        _isSearching = false;
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: '刷新',
+                  onPressed: _refreshNotes,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: '搜索',
+                  onPressed: () {
+                    setState(() {
+                      _isSearching = !_isSearching;
+                      if (!_isSearching) {
                         _searchQuery = '';
                         _searchController.clear();
-                      });
-                    },
-                  )
-                else ...[
-                  IconButton(
-                    icon: const Icon(Icons.camera_alt),
-                    onPressed: _showOCROptions,
-                    tooltip: '拍照识别文字',
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.search),
-                    onPressed: () {
-                      setState(() {
-                        _isSearching = true;
-                      });
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.sort),
-                    onPressed: _showSortOptions,
-                  ),
-                ],
+                      }
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.filter_list),
+                  tooltip: '标签筛选',
+                  onPressed: _showTagFilterDialog,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.label),
+                  tooltip: '添加标签',
+                  onPressed: _showTagDialog,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.sort),
+                  onPressed: _showSortOptions,
+                ),
               ],
             )
           : null,
@@ -456,11 +688,43 @@ class NoteListPageState extends State<NoteListPage> {
                 ],
               ),
             ),
+          // 标签筛选状态提示
+          if (_selectedTag.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.blue[50],
+              child: Row(
+                children: [
+                  Icon(Icons.filter_list, size: 16, color: Colors.blue[600]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '筛选标签: $_selectedTag',
+                      style: TextStyle(color: Colors.blue[600]),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedTag = '';
+                      });
+                    },
+                    child: const Text('清除'),
+                  ),
+                ],
+              ),
+            ),
           // 笔记列表
           Expanded(
-            child: FutureBuilder<List<Note>>(
-              future: _notesFuture,
-              builder: (context, snapshot) {
+            child: RefreshIndicator(
+              onRefresh: () async {
+                _refreshNotes();
+                // 等待一小段时间确保刷新完成
+                await Future.delayed(const Duration(milliseconds: 500));
+              },
+              child: FutureBuilder<List<Note>>(
+                future: _notesFuture,
+                builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -509,12 +773,13 @@ class NoteListPageState extends State<NoteListPage> {
                     final note = filteredNotes[index];
                     return GestureDetector(
                       onTap: () async {
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => NoteEditPage(note: note),
-                          ),
-                        );
-                        _refreshNotes();
+                        await Navigator.of(context)
+                            .push(
+                              MaterialPageRoute(
+                                builder: (context) => NoteEditPage(note: note),
+                              ),
+                            )
+                            .then((_) => _refreshNotes());
                       },
                       onLongPress: () {
                         _showDeleteConfirmDialog(note);
@@ -561,6 +826,15 @@ class NoteListPageState extends State<NoteListPage> {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
+                                  // 单条笔记标签按钮
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.label_outline,
+                                      size: 20,
+                                    ),
+                                    tooltip: '打标签',
+                                    onPressed: () => _showNoteTagDialog(note),
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 12),
@@ -578,6 +852,29 @@ class NoteListPageState extends State<NoteListPage> {
                                 ),
                               ),
                               const SizedBox(height: 8),
+                              // 标签展示
+                              if (note.tags.isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: Wrap(
+                                    spacing: 6,
+                                    runSpacing: 2,
+                                    children: [
+                                      for (final tag in note.tags)
+                                        if (tag.trim().isNotEmpty)
+                                          Chip(
+                                            label: Text(
+                                              tag,
+                                              style: const TextStyle(fontSize: 10),
+                                            ),
+                                            visualDensity: VisualDensity.compact,
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize.shrinkWrap,
+                                            backgroundColor: Colors.blue[50],
+                                          ),
+                                    ],
+                                  ),
+                                ),
                               // 时间和操作提示
                               Row(
                                 mainAxisAlignment:
@@ -609,6 +906,7 @@ class NoteListPageState extends State<NoteListPage> {
               },
             ),
           ),
+        ),
         ],
       ),
       floatingActionButton: _isProcessingOCR

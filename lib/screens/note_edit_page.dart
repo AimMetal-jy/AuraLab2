@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -139,10 +140,17 @@ class NoteEditPageState extends State<NoteEditPage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _titleController;
   late TextEditingController _contentController;
-  late bool _isMarkdown;
+  bool _isMarkdown = true;
   late List<String> _images;
 
   bool _showPreview = false;
+  
+  // 自动保存相关
+  Timer? _autoSaveTimer;
+  bool _hasUnsavedChanges = false;
+  String _lastSavedTitle = '';
+  String _lastSavedContent = '';
+  DateTime? _lastAutoSaveTime;
 
   @override
   void initState() {
@@ -153,6 +161,19 @@ class NoteEditPageState extends State<NoteEditPage> {
     );
     _isMarkdown = widget.note?.isMarkdown ?? false;
     _images = widget.note?.images ?? [];
+    
+    // 初始化保存状态
+    _lastSavedTitle = _titleController.text;
+    _lastSavedContent = _contentController.text;
+    
+    // 添加文本变化监听器
+    _titleController.addListener(_onTextChanged);
+    _contentController.addListener(_onTextChanged);
+    
+    // 启动自动保存定时器（每30秒检查一次）
+    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _performAutoSave();
+    });
   }
 
   void _saveNote() async {
@@ -175,6 +196,17 @@ class NoteEditPageState extends State<NoteEditPage> {
         await NoteDatabaseService.instance.createNote(note);
       } else {
         await NoteDatabaseService.instance.updateNote(note);
+      }
+      
+      // 更新保存状态，避免重复保存
+      _lastSavedTitle = _titleController.text;
+      _lastSavedContent = _contentController.text;
+      _lastAutoSaveTime = DateTime.now();
+      
+      if (mounted) {
+        setState(() {
+          _hasUnsavedChanges = false;
+        });
       }
 
       if (!mounted) return;
@@ -209,7 +241,44 @@ class NoteEditPageState extends State<NoteEditPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.note == null ? '新建笔记' : '编辑笔记'),
+        title: Row(
+          children: [
+            Text(widget.note == null ? '新建笔记' : '编辑笔记'),
+            if (_hasUnsavedChanges) ...[
+               const SizedBox(width: 8),
+               Container(
+                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                 decoration: BoxDecoration(
+                   color: Colors.orange,
+                   borderRadius: BorderRadius.circular(10),
+                 ),
+                 child: const Text(
+                   '未保存',
+                   style: TextStyle(
+                     color: Colors.white,
+                     fontSize: 10,
+                   ),
+                 ),
+               ),
+             ] else if (_lastAutoSaveTime != null) ...[
+               const SizedBox(width: 8),
+               Container(
+                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                 decoration: BoxDecoration(
+                   color: Colors.green,
+                   borderRadius: BorderRadius.circular(10),
+                 ),
+                 child: const Text(
+                   '已保存',
+                   style: TextStyle(
+                     color: Colors.white,
+                     fontSize: 10,
+                   ),
+                 ),
+               ),
+             ]
+          ],
+        ),
         actions: [
           IconButton(
             icon: Icon(_showPreview ? Icons.visibility_off : Icons.visibility),
@@ -278,5 +347,92 @@ class NoteEditPageState extends State<NoteEditPage> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    // 取消自动保存定时器
+    _autoSaveTimer?.cancel();
+    
+    // 移除监听器
+    _titleController.removeListener(_onTextChanged);
+    _contentController.removeListener(_onTextChanged);
+    
+    // 最后一次自动保存
+    _autoSaveNote();
+    
+    _titleController.dispose();
+    _contentController.dispose();
+    super.dispose();
+  }
+
+  // 文本变化监听器
+  void _onTextChanged() {
+    final currentTitle = _titleController.text;
+    final currentContent = _contentController.text;
+    
+    if (currentTitle != _lastSavedTitle || currentContent != _lastSavedContent) {
+      setState(() {
+        _hasUnsavedChanges = true;
+      });
+    }
+  }
+  
+  // 执行自动保存
+  Future<void> _performAutoSave() async {
+    if (_hasUnsavedChanges) {
+      await _autoSaveNote();
+    }
+  }
+  
+  // 自动保存方法（静默保存）
+  Future<void> _autoSaveNote() async {
+    if (_titleController.text.trim().isEmpty &&
+        _contentController.text.trim().isEmpty) {
+      return;
+    }
+
+    try {
+      // 检查内容是否真的有变化，避免重复保存
+      final currentTitle = _titleController.text;
+      final currentContent = _contentController.text;
+      
+      if (currentTitle == _lastSavedTitle && currentContent == _lastSavedContent) {
+        return; // 内容没有变化，不需要保存
+      }
+      
+      final now = DateTime.now();
+      final note = Note(
+        id: widget.note?.id,
+        title: _titleController.text.trim().isEmpty
+            ? '无标题'
+            : _titleController.text,
+        content: _contentController.text,
+        isMarkdown: _isMarkdown,
+        createdAt: widget.note?.createdAt ?? now,
+        updatedAt: now,
+        categoryId: 1,
+        images: _images,
+      );
+      
+      if (widget.note == null) {
+        await NoteDatabaseService.instance.createNote(note);
+      } else {
+        await NoteDatabaseService.instance.updateNote(note);
+      }
+      
+      // 更新保存状态
+      _lastSavedTitle = currentTitle;
+      _lastSavedContent = currentContent;
+      _lastAutoSaveTime = DateTime.now();
+      
+      if (mounted) {
+        setState(() {
+          _hasUnsavedChanges = false;
+        });
+      }
+    } catch (e) {
+      // 静默处理错误，避免在dispose时显示错误
+    }
   }
 }
