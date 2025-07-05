@@ -85,7 +85,7 @@ AuraLab是一款基于Flutter开发的多功能AI音频处理应用，集成了�
 
 1. **克隆项目**
    ```bash
-   git clone <repository-url>
+   git clone <https://github.com/AimMetal-jy/AuraLab2.git>
    cd auralab_0701
    ```
 
@@ -259,12 +259,6 @@ lib/
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 创建Pull Request
-
-## 📞 联系我们
-
-- 项目主页: [GitHub Repository]
-- 问题反馈: [GitHub Issues]
-- 邮箱: [your-email@example.com]
 
 ## 🙏 致谢
 
