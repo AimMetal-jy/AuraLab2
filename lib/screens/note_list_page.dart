@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import '../services/note_database_service.dart';
-import '../services/ocr_service.dart';
 import '../models/note_model.dart';
 import 'note_edit_page.dart';
 import '../widgets/drawer.dart';
@@ -21,8 +19,7 @@ class NoteListPage extends StatefulWidget {
 
 class NoteListPageState extends State<NoteListPage> {
   late Future<List<Note>> _notesFuture;
-  final ImagePicker _picker = ImagePicker();
-  bool _isProcessingOCR = false;
+  final bool _isProcessingOCR = false;
 
   // 搜索和排序相关变量
   String _searchQuery = '';
@@ -182,165 +179,8 @@ class NoteListPageState extends State<NoteListPage> {
     );
   }
 
-  /// 拍照识别文字功能
-  Future<void> _takePhotoAndRecognizeText() async {
-    try {
-      // 拍照
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 80,
-      );
 
-      if (image == null) return;
 
-      setState(() {
-        _isProcessingOCR = true;
-      });
-
-      // 显示处理中的提示
-      if (!mounted) return;
-      CustomToast.show(context, message: '正在识别图片中的文字...');
-
-      // 读取图片字节
-      final imageBytes = await image.readAsBytes();
-
-      // 调用OCR服务
-      final recognizedText = await OCRService.recognizeText(imageBytes);
-
-      setState(() {
-        _isProcessingOCR = false;
-      });
-
-      if (recognizedText.isNotEmpty) {
-        // 识别成功，跳转到笔记编辑页面
-        if (!mounted) return;
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => NoteEditPage(initialContent: recognizedText),
-          ),
-        );
-        _refreshNotes();
-        if (!mounted) return;
-        CustomToast.show(context, message: '文字识别成功！', type: ToastType.success);
-      } else {
-        if (!mounted) return;
-        CustomToast.show(
-          context,
-          message: '未识别到文字，请重试',
-          type: ToastType.warning,
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isProcessingOCR = false;
-      });
-      if (!mounted) return;
-      CustomToast.show(
-        context,
-        message: '识别失败: ${e.toString()}',
-        type: ToastType.error,
-      );
-    }
-  }
-
-  /// 从相册选择图片识别文字
-  Future<void> _pickImageAndRecognizeText() async {
-    try {
-      // 从相册选择图片
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 80,
-      );
-
-      if (image == null) return;
-
-      setState(() {
-        _isProcessingOCR = true;
-      });
-
-      if (!mounted) return;
-      CustomToast.show(context, message: '正在识别图片中的文字...');
-
-      // 读取图片字节
-      final imageBytes = await image.readAsBytes();
-
-      // 调用OCR服务
-      final recognizedText = await OCRService.recognizeText(imageBytes);
-
-      setState(() {
-        _isProcessingOCR = false;
-      });
-
-      if (recognizedText.isNotEmpty) {
-        // 识别成功，跳转到笔记编辑页面
-        if (!mounted) return;
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => NoteEditPage(initialContent: recognizedText),
-          ),
-        );
-        _refreshNotes();
-        if (!mounted) return;
-        CustomToast.show(context, message: '文字识别成功！', type: ToastType.success);
-      } else {
-        if (!mounted) return;
-        CustomToast.show(
-          context,
-          message: '未识别到文字，请重试',
-          type: ToastType.warning,
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isProcessingOCR = false;
-      });
-      if (!mounted) return;
-      CustomToast.show(
-        context,
-        message: '识别失败: ${e.toString()}',
-        type: ToastType.error,
-      );
-    }
-  }
-
-  /// 显示OCR选项底部弹窗
-  void _showOCROptions() {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return Container(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                '选择图片识别文字',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('拍照识别'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _takePhotoAndRecognizeText();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('从相册选择'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImageAndRecognizeText();
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   // 显示删除确认对话框
   Future<void> _showDeleteConfirmDialog(Note note) async {
@@ -462,7 +302,6 @@ class NoteListPageState extends State<NoteListPage> {
     showDialog(
       context: context,
       builder: (context) {
-        String? selectedTag;
         final tagController = TextEditingController();
         return AlertDialog(
           title: const Text('为笔记打标签'),
@@ -484,7 +323,6 @@ class NoteListPageState extends State<NoteListPage> {
                         ActionChip(
                           label: Text(tag),
                           onPressed: () {
-                            selectedTag = tag;
                             tagController.text = tag;
                           },
                         ),
@@ -501,6 +339,7 @@ class NoteListPageState extends State<NoteListPage> {
               onPressed: () async {
                 final tag = tagController.text.trim();
                 if (tag.isEmpty) return;
+                final navigator = Navigator.of(context);
                 // 给所有选中的笔记打标签（这里只做演示，实际可扩展为多选/单选）
                 for (final note in notes) {
                   if (!note.tags.contains(tag)) {
@@ -509,13 +348,15 @@ class NoteListPageState extends State<NoteListPage> {
                   }
                 }
                 if (!mounted) return;
-                Navigator.of(context).pop();
+                navigator.pop();
                 _refreshNotes();
-                CustomToast.show(
-                  context,
-                  message: '标签已添加',
-                  type: ToastType.success,
-                );
+                if (mounted) {
+                  CustomToast.show(
+                    this.context,
+                    message: '标签已添加',
+                    type: ToastType.success,
+                  );
+                }
               },
               child: const Text('确定'),
             ),
@@ -550,6 +391,7 @@ class NoteListPageState extends State<NoteListPage> {
                       Chip(
                         label: Text(tag),
                         onDeleted: () async {
+                          final navigator = Navigator.of(context);
                           final updated = note.copyWith(
                             tags: List.of(note.tags)..remove(tag),
                           );
@@ -557,13 +399,15 @@ class NoteListPageState extends State<NoteListPage> {
                             updated,
                           );
                           if (!mounted) return;
-                          Navigator.of(context).pop();
+                          navigator.pop();
                           _refreshNotes();
-                          CustomToast.show(
-                            context,
-                            message: '标签已移除',
-                            type: ToastType.success,
-                          );
+                          if (mounted) {
+                            CustomToast.show(
+                              this.context,
+                              message: '标签已移除',
+                              type: ToastType.success,
+                            );
+                          }
                         },
                       ),
                   ],
@@ -579,18 +423,21 @@ class NoteListPageState extends State<NoteListPage> {
               onPressed: () async {
                 final tag = tagController.text.trim();
                 if (tag.isEmpty) return;
+                final navigator = Navigator.of(context);
                 if (!note.tags.contains(tag)) {
                   final updated = note.copyWith(tags: [...note.tags, tag]);
                   await NoteDatabaseService.instance.updateNote(updated);
                 }
                 if (!mounted) return;
-                Navigator.of(context).pop();
+                navigator.pop();
                 _refreshNotes();
-                CustomToast.show(
-                  context,
-                  message: '标签已添加',
-                  type: ToastType.success,
-                );
+                if (mounted) {
+                  CustomToast.show(
+                    this.context,
+                    message: '标签已添加',
+                    type: ToastType.success,
+                  );
+                }
               },
               child: const Text('确定'),
             ),

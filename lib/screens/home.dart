@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/audio_player_service.dart';
 import '../services/audio_library_service.dart';
-import '../config/performance_config.dart';
+
 import '../models/audio_player_model.dart';
 import 'dart:io';
 import 'dart:convert';
@@ -272,8 +272,8 @@ class HomePageState extends State<HomePage>
     }
 
     return ListView.builder(
-      // 使用高性能滚动物理效果
-      physics: PerformanceConfig.optimizedScrollPhysics,
+      // 使用标准滚动物理效果
+      physics: const BouncingScrollPhysics(),
       itemCount: items.length,
       // 添加缓存范围以提高滚动性能
       cacheExtent: 500,

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -38,7 +39,6 @@ class _AsrPageState extends State<AsrPage> {
   bool _enableWordTimestamps = true; // 是否生成单词级时间戳
   bool _enableSpeakerDiarization = false; // 是否进行说话人识别
   String _selectedModelName = 'small'; // 选择的模型名称
-  Map<String, dynamic>? _modelInfo; // 模型信息
 
   // 任务状态
   String? _currentTaskId;
@@ -56,30 +56,23 @@ class _AsrPageState extends State<AsrPage> {
   // 任务历史
   List<TranscriptionStatusResponse> _taskHistory = [];
 
+  // 自动刷新定时器
+  Timer? _statusRefreshTimer;
+
   @override
   void initState() {
     super.initState();
     _loadTaskHistory();
-    _loadModelInfo();
   }
 
   @override
   void dispose() {
+    _statusRefreshTimer?.cancel();
     _transcriptionService.dispose();
     super.dispose();
   }
 
-  /// 加载模型信息
-  Future<void> _loadModelInfo() async {
-    try {
-      final modelInfo = await _transcriptionService.getWhisperXModelInfo();
-      setState(() {
-        _modelInfo = modelInfo;
-      });
-    } catch (e) {
-      debugPrint('加载模型信息失败: $e');
-    }
-  }
+
 
   /// 显示模型信息对话框
   void _showModelInfoDialog() {
@@ -99,13 +92,7 @@ class _AsrPageState extends State<AsrPage> {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
-                if (_modelInfo != null && _modelInfo!['data'] != null) ...[
-                  ..._buildModelInfoCards(),
-                ] else ...[
-                  const Center(child: CircularProgressIndicator()),
-                  const SizedBox(height: 16),
-                  const Text('正在加载模型信息...'),
-                ],
+                ..._buildStaticModelInfoCards(),
               ],
             ),
           ),
@@ -120,15 +107,92 @@ class _AsrPageState extends State<AsrPage> {
     );
   }
 
-  /// 构建模型信息卡片
-  List<Widget> _buildModelInfoCards() {
-    final supportedModels =
-        _modelInfo!['data']['supported_models'] as Map<String, dynamic>? ?? {};
+  /// 构建静态模型信息卡片
+  List<Widget> _buildStaticModelInfoCards() {
+    final staticModels = [
+      {
+        'name': 'tiny',
+        'parameters': '39M',
+        'description': '最小模型，速度最快，精度最低',
+        'vram': '~1GB',
+        'speed': '最快',
+        'recommended_for': '快速转录，对精度要求不高的场景'
+      },
+      {
+        'name': 'tiny.en',
+        'parameters': '39M',
+        'description': '英文专用版本，比多语言版本更准确',
+        'vram': '~1GB',
+        'speed': '最快',
+        'recommended_for': '英文音频的快速转录'
+      },
+      {
+        'name': 'base',
+        'parameters': '74M',
+        'description': '基础模型，速度和精度的平衡选择',
+        'vram': '~1GB',
+        'speed': '快',
+        'recommended_for': '一般用途，平衡速度和精度'
+      },
+      {
+        'name': 'base.en',
+        'parameters': '74M',
+        'description': '英文专用基础版本，适合英文音频',
+        'vram': '~1GB',
+        'speed': '快',
+        'recommended_for': '英文音频的平衡选择'
+      },
+      {
+        'name': 'small',
+        'parameters': '244M',
+        'description': '小型模型，较好的速度和精度平衡，推荐选择',
+        'vram': '~2GB',
+        'speed': '中等',
+        'recommended_for': '大多数场景的推荐选择'
+      },
+      {
+        'name': 'small.en',
+        'parameters': '244M',
+        'description': '英文专用小型版本，精度更好',
+        'vram': '~2GB',
+        'speed': '中等',
+        'recommended_for': '英文音频的推荐选择'
+      },
+      {
+        'name': 'medium',
+        'parameters': '769M',
+        'description': '中型模型，高精度但速度较慢',
+        'vram': '~5GB',
+        'speed': '慢',
+        'recommended_for': '对精度要求较高的场景'
+      },
+      {
+        'name': 'medium.en',
+        'parameters': '769M',
+        'description': '英文专用中型版本，专业级精度',
+        'vram': '~5GB',
+        'speed': '慢',
+        'recommended_for': '英文音频的专业级转录'
+      },
+      {
+        'name': 'large',
+        'parameters': '1550M',
+        'description': '大型模型，最高精度但速度最慢',
+        'vram': '~10GB',
+        'speed': '最慢',
+        'recommended_for': '最高精度要求的场景'
+      },
+      {
+        'name': 'turbo',
+        'parameters': '809M',
+        'description': '优化版本，速度快且质量高（不支持时间戳）',
+        'vram': '~6GB',
+        'speed': '快',
+        'recommended_for': '高速高质量转录，不需要时间戳'
+      },
+    ];
 
-    return supportedModels.entries.map((entry) {
-      final modelName = entry.key;
-      final modelInfo = entry.value as Map<String, dynamic>;
-
+    return staticModels.map((modelInfo) {
       return Card(
         margin: const EdgeInsets.only(bottom: 12),
         child: Padding(
@@ -139,7 +203,7 @@ class _AsrPageState extends State<AsrPage> {
               Row(
                 children: [
                   Text(
-                    modelName,
+                    modelInfo['name']!,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -147,14 +211,14 @@ class _AsrPageState extends State<AsrPage> {
                   ),
                   const Spacer(),
                   Chip(
-                    label: Text(modelInfo['parameters'] ?? ''),
+                    label: Text(modelInfo['parameters']!),
                     backgroundColor: Colors.blue.shade100,
                   ),
                 ],
               ),
               const SizedBox(height: 8),
               Text(
-                modelInfo['description'] ?? '',
+                modelInfo['description']!,
                 style: const TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 8),
@@ -163,14 +227,14 @@ class _AsrPageState extends State<AsrPage> {
                   Icon(Icons.memory, size: 16, color: Colors.grey.shade600),
                   const SizedBox(width: 4),
                   Text(
-                    '显存需求: ${modelInfo['vram'] ?? '未知'}',
+                    '显存需求: ${modelInfo['vram']!}',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                   const SizedBox(width: 16),
                   Icon(Icons.speed, size: 16, color: Colors.grey.shade600),
                   const SizedBox(width: 4),
                   Text(
-                    '速度: ${modelInfo['relative_speed'] ?? '未知'}',
+                    '速度: ${modelInfo['speed']!}',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ],
@@ -193,7 +257,7 @@ class _AsrPageState extends State<AsrPage> {
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        '推荐用途: ${modelInfo['recommended_for'] ?? ''}',
+                        '推荐用途: ${modelInfo['recommended_for']!}',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.green.shade700,
@@ -212,71 +276,25 @@ class _AsrPageState extends State<AsrPage> {
 
   /// 构建模型下拉选项（展开时显示详细信息）
   List<DropdownMenuItem<String>> _buildModelDropdownItems() {
-    if (_modelInfo == null || _modelInfo!['data'] == null) {
-      // 如果模型信息未加载，返回基本选项
-      return [
-        const DropdownMenuItem(value: 'tiny', child: Text('tiny - 最快速度，最低精度')),
-        const DropdownMenuItem(value: 'base', child: Text('base - 平衡选择')),
-        const DropdownMenuItem(value: 'small', child: Text('small - 推荐选择')),
-        const DropdownMenuItem(value: 'medium', child: Text('medium - 高精度')),
-        const DropdownMenuItem(value: 'large', child: Text('large - 最高精度')),
-        const DropdownMenuItem(value: 'turbo', child: Text('turbo - 高速高质量')),
-      ];
-    }
-
-    final supportedModels =
-        _modelInfo!['data']['supported_models'] as Map<String, dynamic>? ?? {};
-
-    return supportedModels.entries.map((entry) {
-      final modelName = entry.key;
-      final modelInfo = entry.value as Map<String, dynamic>;
-      final description = modelInfo['description'] ?? '';
-      final parameters = modelInfo['parameters'] ?? '';
-
-      return DropdownMenuItem<String>(
-        value: modelName,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$modelName ($parameters)',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                description,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-        ),
-      );
-    }).toList();
+    return [
+      const DropdownMenuItem(value: 'tiny', child: Text('tiny - 最快速度，最低精度')),
+      const DropdownMenuItem(value: 'tiny.en', child: Text('tiny.en - 英文专用版，速度最快')),
+      const DropdownMenuItem(value: 'base', child: Text('base - 平衡选择')),
+      const DropdownMenuItem(value: 'base.en', child: Text('base.en - 英文专用版，平衡选择')),
+      const DropdownMenuItem(value: 'small', child: Text('small - 推荐选择')),
+      const DropdownMenuItem(value: 'small.en', child: Text('small.en - 英文专用版，推荐选择')),
+      const DropdownMenuItem(value: 'medium', child: Text('medium - 高精度')),
+      const DropdownMenuItem(value: 'medium.en', child: Text('medium.en - 英文专用版，高精度')),
+      const DropdownMenuItem(value: 'large', child: Text('large - 最高精度')),
+      const DropdownMenuItem(value: 'turbo', child: Text('turbo - 高速高质量')),
+    ];
   }
 
   /// 构建选中项的简洁显示（未展开时显示）
   List<Widget> _buildSelectedItemWidgets() {
-    if (_modelInfo == null || _modelInfo!['data'] == null) {
-      // 如果模型信息未加载，返回基本显示
-      return ['tiny', 'base', 'small', 'medium', 'large', 'turbo'].map((
-        modelName,
-      ) {
-        return Text(modelName, style: const TextStyle(fontSize: 14));
-      }).toList();
-    }
-
-    final supportedModels =
-        _modelInfo!['data']['supported_models'] as Map<String, dynamic>? ?? {};
-
-    return supportedModels.entries.map((entry) {
-      final modelName = entry.key;
-
+    return ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en', 'medium', 'medium.en', 'large', 'turbo'].map((
+      modelName,
+    ) {
       return Text(modelName, style: const TextStyle(fontSize: 14));
     }).toList();
   }
@@ -370,6 +388,9 @@ class _AsrPageState extends State<AsrPage> {
         _isProcessing = false; // 任务已提交到后台，界面不再处理中
       });
 
+      // 启动自动刷新定时器
+      _startAutoRefresh();
+
       if (mounted) {
         _showStatusSnackBar('任务提交成功！任务已转入后台处理');
       }
@@ -417,7 +438,7 @@ class _AsrPageState extends State<AsrPage> {
   }
 
   /// 刷新当前任务状态
-  Future<void> _refreshTaskStatus() async {
+  Future<void> _refreshTaskStatus({bool showToast = true}) async {
     if (_currentTaskId == null) return;
 
     try {
@@ -468,17 +489,21 @@ class _AsrPageState extends State<AsrPage> {
         }
       }
 
-      // 如果任务已完成，显示完成信息
-      if (statusResponse.status == TranscriptionStatus.completed) {
-        debugPrint('任务已完成，结果已由后台服务处理');
+      // 如果任务已完成或失败，停止自动刷新并显示信息
+      if (statusResponse.status == TranscriptionStatus.completed ||
+          statusResponse.status == TranscriptionStatus.failed) {
+        _stopAutoRefresh();
+        debugPrint('任务状态: ${statusResponse.status}，已停止自动刷新');
       }
 
-      if (mounted) {
+      // 只有手动刷新时才显示toast
+      if (mounted && showToast) {
         _showStatusSnackBar('状态已刷新');
       }
     } catch (e) {
       debugPrint('刷新状态失败，详细错误: $e');
-      if (mounted) {
+      // 只有手动刷新时才显示错误toast
+      if (mounted && showToast) {
         String errorMessage = '刷新状态失败';
         if (e.toString().contains('404')) {
           errorMessage = '任务不存在或已过期';
@@ -519,6 +544,28 @@ class _AsrPageState extends State<AsrPage> {
       case TranscriptionStatus.failed:
         return Colors.red;
     }
+  }
+
+  /// 启动自动刷新定时器
+  void _startAutoRefresh() {
+    _stopAutoRefresh(); // 先停止现有定时器
+    _statusRefreshTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (_currentTaskId != null && 
+          (_taskStatus == TranscriptionStatus.pending || 
+           _taskStatus == TranscriptionStatus.processing)) {
+        _refreshTaskStatus(showToast: false); // 自动刷新不显示toast
+      } else {
+        _stopAutoRefresh();
+      }
+    });
+    debugPrint('已启动自动刷新定时器，每3秒刷新一次状态');
+  }
+
+  /// 停止自动刷新定时器
+  void _stopAutoRefresh() {
+    _statusRefreshTimer?.cancel();
+    _statusRefreshTimer = null;
+    debugPrint('已停止自动刷新定时器');
   }
 
   @override
