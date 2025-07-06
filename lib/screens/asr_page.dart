@@ -38,7 +38,7 @@ class _AsrPageState extends State<AsrPage> {
   String? _selectedComputeType;
   bool _enableWordTimestamps = true; // 是否生成单词级时间戳
   bool _enableSpeakerDiarization = false; // 是否进行说话人识别
-  String _selectedModelName = 'small'; // 选择的模型名称
+  String _selectedModelName = 'small.en'; // 选择的模型名称
 
   // 任务状态
   String? _currentTaskId;
